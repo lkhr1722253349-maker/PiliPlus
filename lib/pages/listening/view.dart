@@ -11,7 +11,6 @@ import 'package:PiliPlus/pages/listening/models.dart';
 import 'package:PiliPlus/services/shutdown_timer_service.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/id_utils.dart';
-import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:PiliPlus/utils/url_utils.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
@@ -31,6 +30,7 @@ class _ListeningPageState extends State<ListeningPage> {
   bool _busy = false;
   bool _cancelImport = false;
   String _progress = '';
+  final _playlistMenu = MenuController();
 
   @override
   void initState() {
@@ -225,39 +225,20 @@ class _ListeningPageState extends State<ListeningPage> {
     await controller.save();
   }
 
-  Future<void> _add() async {
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('添加视频'),
-        children: [
-          for (final option in const {
-            'video': '视频链接 / BV / av 号',
-            'mine': '我的收藏夹',
-            'link': '收藏夹链接（自己或他人）',
-          }.entries)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, option.key),
-              child: Text(option.value),
-            ),
-        ],
-      ),
-    );
-    if (!mounted || choice == null) return;
-    switch (choice) {
-      case 'mine':
-        await _importFavorites();
-      case 'link':
-        await _importFavoriteLink();
-      case 'video':
-        await _addVideoLink();
-    }
-  }
-
   Future<void> _addVideoLink() async {
     final list = controller.selected;
-    final input = await _text('添加视频', hint: '粘贴 BV 号、av 号或视频链接');
+    var input = await _text('从 BV 号 / 链接导入', hint: 'BV / av 号、视频链接或公开收藏夹链接');
     if (input == null) return;
+    final uri = favoriteLinkUri(input);
+    if (uri?.host == 'b23.tv') {
+      input = await UrlUtils.parseRedirectUrl(uri.toString());
+      if (input == null) throw StateError('无法解析短链接，请复制完整链接');
+    }
+    final folder = favoriteFolderId(input);
+    if (folder != null) {
+      await _importFolder(folder);
+      return;
+    }
     final bv = RegExp(r'BV[0-9A-Za-z]{10}').firstMatch(input)?.group(0);
     final av = RegExp(
       r'(?:av)(\d+)',
@@ -290,24 +271,6 @@ class _ListeningPageState extends State<ListeningPage> {
     );
     if (folder == null) return;
     await _importFolder(folder);
-  }
-
-  Future<void> _importFavoriteLink() async {
-    var input = await _text(
-      '导入收藏夹链接',
-      hint: '粘贴公开收藏夹链接、分享文字或收藏夹 ID',
-    );
-    if (input == null || !mounted) return;
-    final uri = favoriteLinkUri(input);
-    if (uri?.host == 'b23.tv') {
-      input = await UrlUtils.parseRedirectUrl(uri.toString());
-      if (input == null) throw StateError('无法解析收藏夹短链接，请复制完整收藏夹链接');
-    }
-    final id = favoriteFolderId(input);
-    if (id == null) {
-      throw StateError('未找到收藏夹 ID，请复制包含 fid 的收藏夹链接，或直接输入收藏夹 ID');
-    }
-    await _importFolder(id);
   }
 
   Future<void> _importFolder(int folder) async {
@@ -513,10 +476,12 @@ class _ListeningPageState extends State<ListeningPage> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               IconButton(
-                tooltip: controller.shuffle.value ? '关闭随机播放' : '随机播放',
-                isSelected: controller.shuffle.value,
-                icon: const Icon(Icons.shuffle),
-                onPressed: () => controller.shuffle.toggle(),
+                tooltip: '定时关闭',
+                icon: const Icon(Icons.bedtime_outlined),
+                onPressed: () => shutdownTimerService.showScheduleExitDialog(
+                  context,
+                  isFullScreen: false,
+                ),
               ),
               IconButton(
                 tooltip: '上一首',
@@ -543,39 +508,23 @@ class _ListeningPageState extends State<ListeningPage> {
                 onPressed: song == null ? null : () => controller.next(),
               ),
               IconButton(
-                tooltip: controller.repeat.value ? '关闭列表循环' : '列表循环',
-                isSelected: controller.repeat.value,
-                icon: const Icon(Icons.repeat),
-                onPressed: () => controller.repeat.toggle(),
+                tooltip: switch (controller.mode.value) {
+                  ListeningMode.list => '列表循环',
+                  ListeningMode.shuffle => '随机播放',
+                  ListeningMode.single => '单曲循环',
+                },
+                icon: Icon(switch (controller.mode.value) {
+                  ListeningMode.list => Icons.repeat,
+                  ListeningMode.shuffle => Icons.shuffle,
+                  ListeningMode.single => Icons.repeat_one,
+                }),
+                onPressed: controller.cycleMode,
               ),
             ],
           ),
           Wrap(
             alignment: WrapAlignment.center,
             children: [
-              PopupMenuButton<double>(
-                tooltip: '播放倍速',
-                initialValue: controller.speed.value,
-                itemBuilder: (_) => Pref.speedList
-                    .map(
-                      (speed) =>
-                          PopupMenuItem(value: speed, child: Text('${speed}x')),
-                    )
-                    .toList(),
-                onSelected: controller.setSpeed,
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Text('${controller.speed.value}x'),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: () => shutdownTimerService.showScheduleExitDialog(
-                  context,
-                  isFullScreen: false,
-                ),
-                icon: const Icon(Icons.bedtime_outlined),
-                label: const Text('定时关闭'),
-              ),
               TextButton.icon(
                 onPressed: song == null || _busy
                     ? null
@@ -675,23 +624,85 @@ class _ListeningPageState extends State<ListeningPage> {
     );
   });
 
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('听视频歌单'),
-      actions: [
-        IconButton(
-          tooltip: '新建歌单',
-          onPressed: _busy
-              ? null
-              : () => _run(() async {
-                  final name = await _text('新建歌单');
-                  if (name != null) await controller.createPlaylist(name);
-                }),
-          icon: const Icon(Icons.playlist_add),
+  Future<void> _playlistAction(String action, ListeningPlaylist list) async {
+    _playlistMenu.close();
+    await _run(() async {
+      if (action == 'rename') {
+        final name = await _text('重命名歌单', initial: list.name);
+        if (name != null) await controller.renamePlaylist(list, name);
+      } else {
+        await controller.deletePlaylist(list);
+      }
+    });
+  }
+
+  Widget _playlistSelector() => Obx(
+    () => MenuAnchor(
+      controller: _playlistMenu,
+      consumeOutsideTap: true,
+      menuChildren: [
+        for (final list in controller.playlists)
+          SizedBox(
+            width: 280,
+            child: Row(
+              children: [
+                Expanded(
+                  child: MenuItemButton(
+                    onPressed: () {
+                      controller.selectedId.value = list.id;
+                      _playlistMenu.close();
+                    },
+                    child: Text(list.name, overflow: TextOverflow.ellipsis),
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: '歌单操作：${list.name}',
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (action) => _playlistAction(action, list),
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'rename', child: Text('重命名')),
+                    PopupMenuItem(value: 'delete', child: Text('删除')),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        const Divider(height: 1),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.add),
+          onPressed: () {
+            _playlistMenu.close();
+            _run(() async {
+              final name = await _text('新建歌单');
+              if (name != null) await controller.createPlaylist(name);
+            });
+          },
+          child: const Text('新建歌单'),
         ),
       ],
+      builder: (context, menu, child) => TextButton(
+        onPressed: _busy
+            ? null
+            : () => menu.isOpen ? menu.close() : menu.open(),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                controller.selected.name,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
+            const Icon(Icons.arrow_drop_down),
+          ],
+        ),
+      ),
     ),
+  );
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
     body: SafeArea(
       child: Column(
         children: [
@@ -700,37 +711,30 @@ class _ListeningPageState extends State<ListeningPage> {
             child: Row(
               children: [
                 Expanded(
-                  child: Obx(
-                    () => DropdownButton<String>(
-                      isExpanded: true,
-                      value: controller.selectedId.value,
-                      items: controller.playlists
-                          .map(
-                            (list) => DropdownMenuItem(
-                              value: list.id,
-                              child: Text(
-                                '${list.name} · ${list.songs.length} 首',
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: _busy
-                          ? null
-                          : (id) {
-                              if (id != null) controller.selectedId.value = id;
-                            },
-                    ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _playlistSelector(),
                   ),
                 ),
-                IconButton(
-                  tooltip: '添加视频',
-                  onPressed: _busy ? null : () => _run(_add),
-                  icon: const Icon(Icons.add),
-                ),
-                IconButton(
-                  tooltip: '导入收藏',
-                  onPressed: _busy ? null : () => _run(_importFavorites),
-                  icon: const Icon(Icons.favorite_border),
+                MenuAnchor(
+                  consumeOutsideTap: true,
+                  menuChildren: [
+                    MenuItemButton(
+                      onPressed: () => _run(_addVideoLink),
+                      child: const Text('从 BV 号 / 链接导入'),
+                    ),
+                    MenuItemButton(
+                      onPressed: () => _run(_importFavorites),
+                      child: const Text('从我的收藏夹导入'),
+                    ),
+                  ],
+                  builder: (context, menu, child) => IconButton(
+                    tooltip: '添加视频',
+                    onPressed: _busy
+                        ? null
+                        : () => menu.isOpen ? menu.close() : menu.open(),
+                    icon: const Icon(Icons.add),
+                  ),
                 ),
               ],
             ),

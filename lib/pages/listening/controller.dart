@@ -26,6 +26,8 @@ import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 import 'package:media_kit/media_kit.dart';
 
+enum ListeningMode { list, shuffle, single }
+
 class ListeningController extends GetxController {
   static const storageKey = 'listeningPlaylistsV1';
   final playlists = <ListeningPlaylist>[].obs;
@@ -35,8 +37,7 @@ class ListeningController extends GetxController {
   final duration = Duration.zero.obs;
   final playing = false.obs;
   final loading = false.obs;
-  final repeat = true.obs;
-  final shuffle = false.obs;
+  final mode = ListeningMode.list.obs;
   final speed = 1.0.obs;
   Player? _player;
   Future<Player>? _creatingPlayer;
@@ -81,6 +82,34 @@ class ListeningController extends GetxController {
     playlists.add(list);
     selectedId.value = list.id;
     await save();
+  }
+
+  Future<void> renamePlaylist(ListeningPlaylist list, String name) async {
+    if (name.trim().isEmpty) return;
+    list.name = name.trim();
+    await save();
+  }
+
+  Future<void> deletePlaylist(ListeningPlaylist list) async {
+    if (_playingPlaylistId == list.id || list.songs.contains(current.value)) {
+      ++_request;
+      await _yieldPlayback();
+      await _player?.stop();
+      current.value = null;
+      loading.value = false;
+      _playingPlaylistId = null;
+    }
+    playlists.remove(list);
+    if (playlists.isEmpty) {
+      playlists.add(ListeningPlaylist(id: newId(), name: '我的歌单'));
+    }
+    if (selectedId.value == list.id) selectedId.value = playlists.first.id;
+    await save();
+  }
+
+  void cycleMode() {
+    mode.value = ListeningMode
+        .values[(mode.value.index + 1) % ListeningMode.values.length];
   }
 
   Future<void> removeSong(ListeningPlaylist list, ListeningSong song) async {
@@ -179,7 +208,7 @@ class ListeningController extends GetxController {
         if (shutdownTimerService.isWaiting) {
           shutdownTimerService.handleWaiting();
         } else {
-          unawaited(next());
+          unawaited(next(completed: true));
         }
       }),
     ]);
@@ -339,18 +368,19 @@ class ListeningController extends GetxController {
     _publish();
   }
 
-  Future<void> next({bool previous = false}) async {
+  Future<void> next({bool previous = false, bool completed = false}) async {
     if (current.value == null) return;
     final list = playlists.where((e) => e.id == _playingPlaylistId).firstOrNull;
     if (list == null || list.songs.isEmpty) return;
     final index = list.songs.indexOf(current.value!);
     int target = index + (previous ? -1 : 1);
-    if (shuffle.value && list.songs.length > 1) {
+    if (completed && mode.value == ListeningMode.single) {
+      target = index;
+    } else if (mode.value == ListeningMode.shuffle && list.songs.length > 1) {
       target =
           (index + 1 + _random.nextInt(list.songs.length - 1)) %
           list.songs.length;
     } else if (target < 0 || target >= list.songs.length) {
-      if (!repeat.value) return;
       target = (target + list.songs.length) % list.songs.length;
     }
     await play(list, list.songs[target]);
