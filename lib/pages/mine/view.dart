@@ -188,7 +188,7 @@ class _MediaPageState extends CommonPageState<MinePage>
                 iconSize: iconSize,
                 padding: padding,
                 style: style,
-                tooltip: "${anonymity ? '退出' : '进入'}无痕模式",
+                tooltip: "${anonymity ? '关闭' : '开启'}匿名浏览（推荐、播放、观看记录）",
                 onPressed: MineController.onChangeAnonymity,
                 icon: anonymity
                     ? const Icon(MdiIcons.incognito)

@@ -3,6 +3,7 @@ import 'package:PiliPlus/models/common/account_type.dart';
 import 'package:PiliPlus/pages/mine/controller.dart';
 import 'package:PiliPlus/utils/accounts/account.dart';
 import 'package:PiliPlus/utils/login_utils.dart';
+import 'package:PiliPlus/utils/storage.dart';
 import 'package:hive_ce/hive.dart';
 
 abstract final class Accounts {
@@ -13,11 +14,15 @@ abstract final class Accounts {
   );
   static bool get mainEqVideo => main == video;
   static Account get main => accountMode[AccountType.main.index];
-  static Account get video => accountMode[AccountType.video.index];
-  static Account get heartbeat => accountMode[AccountType.heartbeat.index];
+  static bool get anonymousBrowsing =>
+      GStorage.setting.get('anonymousBrowsing', defaultValue: false) as bool;
+  static Future<void> setAnonymousBrowsing(bool value) =>
+      GStorage.setting.put('anonymousBrowsing', value);
+  static Account get video => get(AccountType.video);
+  static Account get heartbeat => get(AccountType.heartbeat);
   static Account get history {
     final heartbeat = Accounts.heartbeat;
-    if (heartbeat is AnonymousAccount) {
+    if (heartbeat is AnonymousAccount && !anonymousBrowsing) {
       return Accounts.main;
     }
     return heartbeat;
@@ -80,7 +85,7 @@ abstract final class Accounts {
             : LoginUtils.onLogoutMain());
         break;
       case AccountType.heartbeat:
-        MineController.anonymity.value = !account.isLogin;
+        MineController.anonymity.value = anonymousBrowsing;
         break;
       default:
         break;
@@ -89,6 +94,9 @@ abstract final class Accounts {
 
   @pragma("vm:prefer-inline")
   static Account get(AccountType key) {
+    if (key != AccountType.main && anonymousBrowsing) {
+      return AnonymousAccount();
+    }
     return accountMode[key.index];
   }
 }

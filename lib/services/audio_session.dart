@@ -1,10 +1,12 @@
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
+import 'package:PiliPlus/services/service_locator.dart';
 import 'package:audio_session/audio_session.dart';
 
 class AudioSessionHandler {
   late AudioSession session;
   bool _playInterrupted = false;
+  bool _listeningInterrupted = false;
 
   Future<bool> setActive(bool active) {
     return session.setActive(active);
@@ -19,6 +21,18 @@ class AudioSessionHandler {
     session.configure(const AudioSessionConfiguration.music());
 
     session.interruptionEventStream.listen((event) {
+      if (pauseListening != null) {
+        if (event.begin) {
+          _listeningInterrupted = videoPlayerServiceHandler?.playbackState.value.playing ?? false;
+          if (_listeningInterrupted) videoPlayerServiceHandler?.pause();
+        } else {
+          if (_listeningInterrupted && event.type != AudioInterruptionType.unknown) {
+            videoPlayerServiceHandler?.play();
+          }
+          _listeningInterrupted = false;
+        }
+        return;
+      }
       final playerStatus = PlPlayerController.getPlayerStatusIfExists();
       // final player = PlPlayerController.getInstance();
       if (event.begin) {
@@ -65,6 +79,11 @@ class AudioSessionHandler {
 
     // 耳机拔出暂停
     session.becomingNoisyEventStream.listen((_) {
+      if (pauseListening != null) {
+        _listeningInterrupted = false;
+        videoPlayerServiceHandler?.pause();
+        return;
+      }
       PlPlayerController.pauseIfExists();
       // final player = PlPlayerController.getInstance();
       // if (player.playerStatus.playing) {

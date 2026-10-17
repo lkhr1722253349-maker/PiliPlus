@@ -2,6 +2,8 @@ import 'package:PiliPlus/http/loading_state.dart';
 import 'package:PiliPlus/http/video.dart';
 import 'package:PiliPlus/pages/common/common_list_controller.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
+import 'package:PiliPlus/utils/accounts.dart';
+import 'package:PiliPlus/models/common/account_type.dart';
 
 class RcmdController extends CommonListController {
   late bool enableSaveLastData = Pref.enableSaveLastData;
@@ -22,7 +24,7 @@ class RcmdController extends CommonListController {
 
   @override
   Future<LoadingState> customGetData() {
-    return appRcmd
+    return appRcmd && Accounts.get(AccountType.recommend).isLogin
         ? VideoHttp.rcmdVideoListApp(freshIdx: page)
         : VideoHttp.rcmdVideoList(freshIdx: page, ps: 20);
   }

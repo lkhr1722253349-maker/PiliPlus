@@ -217,8 +217,22 @@ class AudioController extends GetxController
     return player?.state.playing ?? false;
   }
 
-  Future<void>? onPlay() {
-    return player?.play();
+  Future<void> onPlay() async {
+    await pauseListening?.call();
+    _claimAudioSession();
+    await player?.play();
+  }
+
+  void _claimAudioSession() {
+    videoPlayerServiceHandler
+      ?..onPlay = onPlay
+      ..onPause = onPause
+      ..onSeek = onSeek
+      ..onSkipToNext = playNext
+      ..onSkipToPrevious = playPrev;
+    shutdownTimerService
+      ..onPause = onPause
+      ..isPlaying = isPlaying;
   }
 
   Future<void>? onPause() {
@@ -363,6 +377,8 @@ class AudioController extends GetxController
     String? referer,
     http_model.Volume? volume,
   }) async {
+    await pauseListening?.call();
+    _claimAudioSession();
     await _initPlayerIfNeeded();
     final extras = audioFilterExtras(volume);
     player

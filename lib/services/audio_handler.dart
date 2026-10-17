@@ -120,6 +120,17 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
     if (!mediaItem.isClosed) mediaItem.add(newMediaItem);
   }
 
+  void setListeningMediaItem(MediaItem item) {
+    _item.removeWhere((e) => e.id.startsWith('listening:'));
+    _item.add(item);
+    setMediaItem(item);
+  }
+
+  void clearListeningMediaItem() {
+    _item.removeWhere((e) => e.id.startsWith('listening:'));
+    if (_item.isNotEmpty) setMediaItem(_item.last);
+  }
+
   Duration? _lastPos;
   _StatusConfig? _lastConfig;
   void onUpdateState(

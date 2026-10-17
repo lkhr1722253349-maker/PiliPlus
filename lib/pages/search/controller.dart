@@ -11,6 +11,7 @@ import 'package:PiliPlus/utils/extension/get_ext.dart';
 import 'package:PiliPlus/utils/extension/string_ext.dart';
 import 'package:PiliPlus/utils/id_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
+import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -176,7 +177,7 @@ class SSearchController extends GetxController
       return;
     }
 
-    if (recordSearchHistory.value) {
+    if (recordSearchHistory.value && !Accounts.anonymousBrowsing) {
       final index = historyList.indexOf(text);
       if (index != 0) {
         if (index != -1) historyList.removeAt(index);

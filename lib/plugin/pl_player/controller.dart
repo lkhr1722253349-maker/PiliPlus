@@ -1237,6 +1237,7 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
   /// 播放视频
   Future<void> play({bool repeat = false, bool hideControls = true}) async {
     if (_playerCount == 0) return;
+    await pauseListening?.call();
     // 播放时自动隐藏控制条
     controls = !hideControls;
     // repeat为true，将从头播放
@@ -1572,6 +1573,7 @@ class PlPlayerController with BlockConfigMixin, AudioNormalizationMixin {
     VideoType? videoType,
   }) {
     if (isLive ||
+        Accounts.anonymousBrowsing ||
         !enableHeart ||
         progress == 0 ||
         (playerStatus.isPaused && !isManual)) {

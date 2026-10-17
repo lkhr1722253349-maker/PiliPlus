@@ -1,10 +1,15 @@
 import 'package:PiliPlus/http/api.dart';
 import 'package:PiliPlus/models/common/account_type.dart';
+import 'package:PiliPlus/grpc/url.dart';
+import 'package:PiliPlus/http/constants.dart';
 
 abstract final class ApiType {
   // TODO: grpc api type
   static const Map<AccountType, Set<String>> apiTypeSet = {
     AccountType.heartbeat: {
+      HttpString.appBaseUrl + GrpcUrl.view,
+      HttpString.appBaseUrl + GrpcUrl.mainList,
+      HttpString.appBaseUrl + GrpcUrl.detailList,
       Api.videoIntro,
       Api.replyList,
       Api.replyReplyList,
@@ -95,6 +100,8 @@ abstract final class ApiType {
     },
     // progress
     AccountType.video: {
+      HttpString.appBaseUrl + GrpcUrl.audioPlayUrl,
+      HttpString.appBaseUrl + GrpcUrl.audioPlayList,
       Api.ugcUrl,
       Api.pgcUrl,
       Api.pugvUrl,

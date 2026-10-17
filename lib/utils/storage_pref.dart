@@ -111,12 +111,21 @@ abstract final class Pref {
   );
   //   [0.5, 100.0, 2.2 * math.sqrt(50)], // [mass, stiffness, damping]
 
-  static List<double> get speedList => List<double>.from(
-    _video.get(
+  static List<double> get speedList {
+    final speeds = List<double>.from(_video.get(
       VideoBoxKey.speedsList,
-      defaultValue: const [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 3.0],
-    ),
-  );
+      defaultValue: const [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 3.0,
+        4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+    ));
+    if (_video.get('extendedSpeedsV1') != true) {
+      speeds.addAll([for (var i = 4; i <= 10; i++)
+        if (!speeds.contains(i.toDouble())) i.toDouble()]);
+      speeds.sort();
+      _video.put(VideoBoxKey.speedsList, speeds);
+      _video.put('extendedSpeedsV1', true);
+    }
+    return speeds;
+  }
 
   static List<Pair<SegmentType, SkipType>> get blockSettings {
     final list = _setting.get(SettingBoxKey.blockSettings) as List?;

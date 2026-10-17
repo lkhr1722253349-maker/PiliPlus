@@ -1,6 +1,7 @@
 import 'package:PiliPlus/pages/article/view.dart';
 import 'package:PiliPlus/pages/article_list/view.dart';
 import 'package:PiliPlus/pages/audio/view.dart';
+import 'package:PiliPlus/pages/listening/view.dart';
 import 'package:PiliPlus/pages/blacklist/view.dart';
 import 'package:PiliPlus/pages/bubble/view.dart';
 import 'package:PiliPlus/pages/danmaku_block/view.dart';
@@ -72,6 +73,7 @@ import 'package:get/get.dart';
 
 class Routes {
   static final List<GetPage<dynamic>> getPages = [
+    GetPage(name: '/listening', page: () => const ListeningPage()),
     GetPage(name: '/', page: () => const MainApp()),
     // 首页(推荐)
     GetPage(name: '/home', page: () => const HomePage()),

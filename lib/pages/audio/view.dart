@@ -502,8 +502,8 @@ class _AudioPageState extends State<AudioPage> {
                         Slider(
                           padding: EdgeInsets.zero,
                           min: 0.5,
-                          max: 2.0,
-                          divisions: 15,
+                          max: 10.0,
+                          divisions: 95,
                           value: _controller.speed,
                           onChanged: (value) {
                             _controller.speed = value.toPrecision(1);

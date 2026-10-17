@@ -231,6 +231,16 @@ class AccountManager extends Interceptor {
 
   static Account _bindRequestAccount(RequestOptions options) {
     assert(options.extra['account'] is Account?);
+    if (Accounts.anonymousBrowsing && ApiType.apiTypeSet.entries.any(
+      (entry) => entry.key != AccountType.main && entry.value.contains(options.path))) {
+      // Retries may carry headers and account objects from before the toggle.
+      options.headers.removeWhere((key, _) => const {
+        'cookie', 'authorization', 'x-bili-mid', 'x-bili-aurora-eid',
+        'x-bili-metadata-bin',
+      }.contains(key.toLowerCase()));
+      options.queryParameters.remove('access_key');
+      options.extra['account'] = AnonymousAccount();
+    }
     return options.extra['account'] ??= _findAccount(options.path);
   }
 
