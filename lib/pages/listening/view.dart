@@ -6,11 +6,13 @@ import 'package:PiliPlus/models/search/result.dart';
 import 'package:PiliPlus/models_new/video/video_detail/data.dart';
 import 'package:PiliPlus/models_new/video/video_detail/page.dart';
 import 'package:PiliPlus/pages/listening/controller.dart';
+import 'package:PiliPlus/pages/listening/favorite_link.dart';
 import 'package:PiliPlus/pages/listening/models.dart';
 import 'package:PiliPlus/services/shutdown_timer_service.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/id_utils.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
+import 'package:PiliPlus/utils/url_utils.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -200,6 +202,7 @@ class _ListeningPageState extends State<ListeningPage> {
     ListeningPlaylist list,
     String bvid, {
     int? folderId,
+    int? folderOwnerMid,
   }) async {
     final detail = await controller.detail(bvid);
     final parts = await _parts(detail);
@@ -215,7 +218,7 @@ class _ListeningPageState extends State<ListeningPage> {
           name: name,
           original: source,
           folderIds: {?folderId},
-          ownerMid: folderId == null ? null : Accounts.main.mid,
+          ownerMid: folderId == null ? null : folderOwnerMid,
         ),
       );
     }
@@ -223,6 +226,35 @@ class _ListeningPageState extends State<ListeningPage> {
   }
 
   Future<void> _add() async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('添加视频'),
+        children: [
+          for (final option in const {
+            'video': '视频链接 / BV / av 号',
+            'mine': '我的收藏夹',
+            'link': '收藏夹链接（自己或他人）',
+          }.entries)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, option.key),
+              child: Text(option.value),
+            ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case 'mine':
+        await _importFavorites();
+      case 'link':
+        await _importFavoriteLink();
+      case 'video':
+        await _addVideoLink();
+    }
+  }
+
+  Future<void> _addVideoLink() async {
     final list = controller.selected;
     final input = await _text('添加视频', hint: '粘贴 BV 号、av 号或视频链接');
     if (input == null) return;
@@ -236,7 +268,6 @@ class _ListeningPageState extends State<ListeningPage> {
   }
 
   Future<void> _importFavorites() async {
-    final list = controller.selected;
     final folders = await controller.folders();
     if (!mounted) return;
     final folder = await showDialog<int>(
@@ -258,6 +289,31 @@ class _ListeningPageState extends State<ListeningPage> {
       ),
     );
     if (folder == null) return;
+    await _importFolder(folder);
+  }
+
+  Future<void> _importFavoriteLink() async {
+    var input = await _text(
+      '导入收藏夹链接',
+      hint: '粘贴公开收藏夹链接、分享文字或收藏夹 ID',
+    );
+    if (input == null || !mounted) return;
+    final uri = favoriteLinkUri(input);
+    if (uri?.host == 'b23.tv') {
+      input = await UrlUtils.parseRedirectUrl(uri.toString());
+      if (input == null) throw StateError('无法解析收藏夹短链接，请复制完整收藏夹链接');
+    }
+    final id = favoriteFolderId(input);
+    if (id == null) {
+      throw StateError('未找到收藏夹 ID，请复制包含 fid 的收藏夹链接，或直接输入收藏夹 ID');
+    }
+    await _importFolder(id);
+  }
+
+  Future<void> _importFolder(int folder) async {
+    final list = controller.selected;
+    int? syncFolder;
+    int? ownerMid;
     _cancelImport = false;
     var count = 0;
     for (var page = 1; mounted && !_cancelImport; page++) {
@@ -267,6 +323,37 @@ class _ListeningPageState extends State<ListeningPage> {
         ps: 20,
       );
       if (result case Success(:final response)) {
+        if (page == 1) {
+          final info = response.info;
+          final mid = info?.upper?.mid ?? info?.mid;
+          final owned = Accounts.main.isLogin && mid == Accounts.main.mid;
+          if (owned) {
+            syncFolder = folder;
+            ownerMid = mid;
+          }
+          if (!mounted) return;
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Text('导入 ${info?.title ?? "收藏夹"}'),
+              content: Text(
+                '${info?.mediaCount ?? response.medias?.length ?? 0} 个视频，多 P 视频可逐项选择。\n\n'
+                '${owned ? "这是你的收藏夹，换源时会同步更新收藏。" : "导入本地歌单，换源仅更新歌单，不修改他人的收藏夹。"}',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('开始导入'),
+                ),
+              ],
+            ),
+          );
+          if (confirmed != true || !mounted) return;
+        }
         final videos = response.medias ?? [];
         if (videos.isEmpty) break;
         for (final video in videos) {
@@ -277,7 +364,12 @@ class _ListeningPageState extends State<ListeningPage> {
               ? video.bvid!
               : IdUtils.av2bv(video.id!);
           try {
-            await _addVideo(list, bvid, folderId: folder);
+            await _addVideo(
+              list,
+              bvid,
+              folderId: syncFolder,
+              folderOwnerMid: ownerMid,
+            );
           } catch (e) {
             // Keep even already-invalid favorite entries so their name can be
             // corrected and used for source search later.
@@ -294,8 +386,8 @@ class _ListeningPageState extends State<ListeningPage> {
                 id: controller.newId(),
                 name: video.title ?? bvid,
                 original: source,
-                folderIds: {folder},
-                ownerMid: Accounts.main.mid,
+                folderIds: {?syncFolder},
+                ownerMid: ownerMid,
                 error: '无法获取原视频，保留条目以便换源：$e',
               ),
             );

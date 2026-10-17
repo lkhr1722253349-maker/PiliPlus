@@ -47,6 +47,15 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('听视频歌单'), findsOneWidget);
       expect(find.byTooltip('导入收藏'), findsOneWidget);
+      await tester.tap(find.byTooltip('添加视频'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('我的收藏夹'), findsOneWidget);
+      expect(find.text('收藏夹链接（自己或他人）'), findsOneWidget);
+      await tester.tap(find.text('收藏夹链接（自己或他人）'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('导入收藏夹链接'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('新建歌单'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
