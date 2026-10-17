@@ -228,11 +228,30 @@ class MainController extends GetxController
         (GStorage.setting.get(SettingBoxKey.navBarSort) as List?)?.fromCast();
     late final List<NavigationBarType> navigationBars;
     if (navBarSort == null || navBarSort.isEmpty) {
-      navigationBars = NavigationBarType.values;
+      navigationBars = [
+        .home,
+        .dynamics,
+        .listening,
+        .mine,
+      ];
     } else {
       navigationBars = navBarSort
           .map(NavigationBarType.values.elementAt)
           .toList();
+    }
+    if (GStorage.setting.get('listeningNavigationV1') != true) {
+      if (!navigationBars.contains(NavigationBarType.listening)) {
+        final mineIndex = navigationBars.indexOf(NavigationBarType.mine);
+        navigationBars.insert(
+          mineIndex < 0 ? navigationBars.length : mineIndex,
+          NavigationBarType.listening,
+        );
+        GStorage.setting.put(
+          SettingBoxKey.navBarSort,
+          navigationBars.map((item) => item.index).toList(),
+        );
+      }
+      GStorage.setting.put('listeningNavigationV1', true);
     }
     this.navigationBars = navigationBars;
     final defPage = Pref.defaultHomePage;
@@ -313,7 +332,7 @@ class MainController extends GetxController
           () => switch (currentNav) {
             .home => homeController.onRefresh(),
             .dynamics => dynamicController.onRefresh(),
-            .mine => null,
+            .mine || .listening => null,
           },
         );
       } else {
