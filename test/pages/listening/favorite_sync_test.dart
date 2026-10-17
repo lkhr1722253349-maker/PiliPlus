@@ -106,6 +106,54 @@ void main() {
     expect(controller.events, ['add:2:2:100']);
   });
   test(
+    'delete and unfavorite removes remote favorite before local song',
+    () async {
+      final list = controller.playlists.first;
+      final otherPart = ListeningSong(
+        id: 'other',
+        name: '分P',
+        original: oldSource,
+        folderIds: {100},
+        ownerMid: 123,
+      );
+      list.songs.add(otherPart);
+      await controller.removeSongAndUnfavorite(list, song);
+      expect(controller.events, ['remove:1:2:100', 'save']);
+      expect(list.songs, [otherPart]);
+      expect(otherPart.folderIds, isEmpty);
+    },
+  );
+  test(
+    'failed unfavorite preserves local song and favorite association',
+    () async {
+      controller.failRemove = true;
+      await expectLater(
+        controller.removeSongAndUnfavorite(controller.playlists.first, song),
+        throwsStateError,
+      );
+      expect(controller.playlists.first.songs, contains(song));
+      expect(song.folderIds, {100});
+    },
+  );
+  test('unfavorite refuses another account before any request', () async {
+    final foreignSong = ListeningSong(
+      id: 'foreign',
+      name: '他人',
+      original: oldSource,
+      folderIds: {100},
+      ownerMid: 456,
+    );
+    await expectLater(
+      controller.removeSongAndUnfavorite(
+        controller.playlists.first,
+        foreignSong,
+      ),
+      throwsStateError,
+    );
+    expect(controller.events, isEmpty);
+    expect(controller.playlists.first.songs, contains(song));
+  });
+  test(
     'network failure removing old favorite keeps durable retry state',
     () async {
       controller.failRemove = true;

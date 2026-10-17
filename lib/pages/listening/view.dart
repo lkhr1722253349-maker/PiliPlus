@@ -31,11 +31,32 @@ class _ListeningPageState extends State<ListeningPage> {
   bool _cancelImport = false;
   String _progress = '';
   final _playlistMenu = MenuController();
+  final _songsScroll = ScrollController();
+  late final Worker _focusWorker;
 
   @override
   void initState() {
     super.initState();
     controller.onUnavailable = _onUnavailable;
+    _focusWorker = ever(controller.focusRequest, (_) => _focusPlayingSong());
+    controller.focusCurrentSong();
+  }
+
+  void _focusPlayingSong() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final song = controller.current.value;
+      if (!mounted || song == null || !_songsScroll.hasClients) return;
+      final index = controller.selected.songs.indexOf(song);
+      if (index < 0) return;
+      final position = _songsScroll.position;
+      final offset = (index * 80.0 - (position.viewportDimension - 80) / 2)
+          .clamp(0.0, position.maxScrollExtent);
+      _songsScroll.animateTo(
+        offset,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   void _onUnavailable(ListeningSong song) {
@@ -50,6 +71,8 @@ class _ListeningPageState extends State<ListeningPage> {
       controller.onUnavailable = null;
     }
     _cancelImport = true;
+    _focusWorker.dispose();
+    _songsScroll.dispose();
     super.dispose();
   }
 
@@ -553,6 +576,8 @@ class _ListeningPageState extends State<ListeningPage> {
       );
     }
     return ListView.builder(
+      controller: _songsScroll,
+      itemExtent: 80,
       itemCount: list.songs.length,
       itemBuilder: (context, i) {
         final song = list.songs[i];
@@ -563,11 +588,13 @@ class _ListeningPageState extends State<ListeningPage> {
                 ? Icons.music_note_outlined
                 : Icons.error_outline,
           ),
-          title: Text(song.name),
+          title: Text(song.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(
             song.error == null
                 ? 'P${song.source.page} · ${song.source.bvid}'
                 : '播放不可用 · 原信息已保留，可搜索换源',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           onTap: () => _play(list, song),
           trailing: PopupMenuButton<String>(
@@ -587,6 +614,28 @@ class _ListeningPageState extends State<ListeningPage> {
                   }
                 case 'delete':
                   await controller.removeSong(list, song);
+                case 'unfavorite':
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('删除并取消收藏'),
+                      content: Text(
+                        '将“${song.name}”从歌单删除，并从关联的 ${song.folderIds.length} 个个人收藏夹移除当前视频。\n\n收藏按整个视频取消，同一视频的其他分 P 也会失去该收藏关联，但保留在歌单中。',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('取消'),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('删除并取消收藏'),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed == true)
+                    await controller.removeSongAndUnfavorite(list, song);
                 case 'sync':
                   await controller.retryFavoriteSync(song);
                 case 'original':
@@ -617,6 +666,11 @@ class _ListeningPageState extends State<ListeningPage> {
               if (song.pendingFavoriteSync)
                 const PopupMenuItem(value: 'sync', child: Text('重试同步收藏')),
               const PopupMenuItem(value: 'delete', child: Text('从歌单删除（保留收藏）')),
+              PopupMenuItem(
+                value: 'unfavorite',
+                enabled: song.folderIds.isNotEmpty,
+                child: const Text('从歌单删除并取消收藏'),
+              ),
             ],
           ),
         );

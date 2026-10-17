@@ -32,6 +32,7 @@ class ListeningController extends GetxController {
   static const storageKey = 'listeningPlaylistsV1';
   final playlists = <ListeningPlaylist>[].obs;
   final selectedId = ''.obs;
+  final focusRequest = 0.obs;
   final current = Rxn<ListeningSong>();
   final position = Duration.zero.obs;
   final duration = Duration.zero.obs;
@@ -122,6 +123,49 @@ class ListeningController extends GetxController {
     }
     list.songs.remove(song);
     await save();
+  }
+
+  void focusCurrentSong() {
+    final song = current.value;
+    if (song == null) return;
+    final list =
+        playlists
+            .where(
+              (list) =>
+                  list.id == _playingPlaylistId && list.songs.contains(song),
+            )
+            .firstOrNull ??
+        playlists.where((list) => list.songs.contains(song)).firstOrNull;
+    if (list == null) return;
+    selectedId.value = list.id;
+    focusRequest.value++;
+  }
+
+  Future<void> removeSongAndUnfavorite(
+    ListeningPlaylist list,
+    ListeningSong song,
+  ) async {
+    if (song.folderIds.isEmpty) throw StateError('此歌曲没有关联的个人收藏夹');
+    if (!Accounts.main.isLogin || song.ownerMid != Accounts.main.mid) {
+      throw StateError('请切换到导入收藏时使用的主账号');
+    }
+    await retryFavoriteSync(song);
+    if (song.pendingFavoriteSync) throw StateError('请先完成上次换源的收藏同步');
+    final folders = Set<int>.of(song.folderIds);
+    final result = await updateFavorite(
+      resources: '${song.source.aid}:2',
+      delIds: folders.join(','),
+    );
+    if (!result.isSuccess) throw StateError('取消收藏失败，已保留歌单歌曲：$result');
+    for (final playlist in playlists) {
+      for (final other in playlist.songs) {
+        if (other.ownerMid == song.ownerMid &&
+            other.source.aid == song.source.aid) {
+          other.folderIds.removeAll(folders);
+        }
+      }
+    }
+    await removeSong(list, song);
   }
 
   Future<VideoDetailData> detail(String bvid) async {

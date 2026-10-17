@@ -11,6 +11,7 @@ import 'package:PiliPlus/models/common/msg/msg_unread_type.dart';
 import 'package:PiliPlus/models/common/nav_bar_config.dart';
 import 'package:PiliPlus/pages/dynamics/controller.dart';
 import 'package:PiliPlus/pages/home/controller.dart';
+import 'package:PiliPlus/pages/listening/controller.dart';
 import 'package:PiliPlus/pages/mine/view.dart';
 import 'package:PiliPlus/services/account_service.dart';
 import 'package:PiliPlus/utils/extension/get_ext.dart';
@@ -310,6 +311,10 @@ class MainController extends GetxController
     feedBack();
 
     final currentNav = navigationBars[value];
+    if (currentNav == NavigationBarType.listening &&
+        Get.isRegistered<ListeningController>()) {
+      Get.find<ListeningController>().focusCurrentSong();
+    }
     if (value != selectedIndex.value) {
       selectedIndex.value = value;
       if (mainTabBarView) {

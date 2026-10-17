@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:PiliPlus/pages/listening/controller.dart';
+import 'package:PiliPlus/pages/listening/models.dart';
 import 'package:PiliPlus/pages/listening/view.dart';
 import 'package:PiliPlus/utils/storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -97,6 +98,31 @@ void main() {
       await tester.tap(find.text('删除'));
       await tester.pumpAndSettle();
       expect(Get.find<ListeningController>().selected.name, '我的歌单');
+      final player = Get.find<ListeningController>();
+      final playingList = player.selected;
+      playingList.songs.addAll(
+        List.generate(
+          100,
+          (i) => ListeningSong(
+            id: 'song-$i',
+            name: '曲目 $i',
+            original: SongSource(
+              bvid: 'bv$i',
+              aid: i + 1,
+              cid: i + 1,
+              page: 1,
+              title: '视频 $i',
+            ),
+          ),
+        ),
+      );
+      player.current.value = playingList.songs[90];
+      await player.createPlaylist('其他歌单');
+      await tester.pumpAndSettle();
+      player.focusCurrentSong();
+      await tester.pumpAndSettle();
+      expect(player.selected.id, playingList.id);
+      expect(find.text('曲目 90'), findsNWidgets(2));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 1));
