@@ -24,3 +24,14 @@ plugins {
 }
 
 include(":app")
+
+check(findProject(":media_kit_libs_android_video") != null) {
+    "The Android media_kit native plugin is missing. Run flutter pub get after " +
+        "restoring dependency checkouts; do not build with stale plugin metadata."
+}
+
+check(file("app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java").isFile) {
+    "The Flutter Android plugin registrant is missing. Complete flutter pub get " +
+        "successfully before building. For Android-only builds on Windows without " +
+        "symlink support, set FLUTTER_WINDOWS=false for the build process."
+}

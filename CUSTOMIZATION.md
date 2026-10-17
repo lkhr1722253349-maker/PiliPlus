@@ -33,10 +33,15 @@
 
 Windows 下载 Git 依赖需要启用 Git 长路径支持；可只向构建进程传递 `core.longpaths=true`，不必修改全局 Git 配置。Windows 桌面插件链接还需要操作系统提供符号链接支持。
 
+只构建 Android 且 Windows 未启用符号链接时，可以在当前 PowerShell 进程设置 `$env:FLUTTER_WINDOWS='false'` 后运行 `flutter pub get`，避免桌面插件链接中断 Android 注册表的生成。必须看到依赖解析完整成功，并生成 `android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java`。
+
 ```powershell
 flutter analyze --no-pub
 flutter test --no-pub test/pages/listening test/utils/accounts test/utils/extended_speeds_test.dart
 flutter build apk --debug --target-platform android-arm64 --no-pub
+pwsh -File lib/scripts/verify_apk.ps1 build/app/outputs/flutter-apk/app-debug.apk
 ```
+
+MuMu 使用 x86_64 架构，构建时使用 `--target-platform android-arm64,android-x64` 可以同时兼容手机与模拟器。恢复 Git 依赖缓存后必须重新运行 `flutter pub get`，更新原生插件元数据；仅有 Dart 依赖解析成功不能证明播放器原生库已经打包。构建后使用上述脚本检查每种 Flutter ABI 对应的 `libmpv.so`，并实际启动验证。
 
 测试覆盖来源与原作持久化、多 P 去重、换源收藏的请求顺序与失败恢复、跨账号隔离、匿名账号路由、已有倍速迁移及窄屏 / 宽屏歌单界面。
