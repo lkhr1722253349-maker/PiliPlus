@@ -44,8 +44,9 @@ class _ListeningPageState extends State<ListeningPage> {
 
   @override
   void dispose() {
-    if (controller.onUnavailable == _onUnavailable)
+    if (controller.onUnavailable == _onUnavailable) {
       controller.onUnavailable = null;
+    }
     _cancelImport = true;
     super.dispose();
   }

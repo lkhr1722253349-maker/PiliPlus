@@ -244,6 +244,7 @@ class ListeningController extends GetxController {
     _notifiedFailure = null;
     loading.value = true;
     await _player?.pause();
+    if (request != _request) return;
     current.value = song;
     _playingPlaylistId = list.id;
     position.value = duration.value = Duration.zero;
@@ -271,6 +272,7 @@ class ListeningController extends GetxController {
         if (request != _request) return;
         _bindSession();
         await audioSessionHandler?.setActive(true);
+        if (request != _request) return;
         videoPlayerServiceHandler?.setListeningMediaItem(
           MediaItem(
             id: 'listening:${song.id}',
