@@ -49,12 +49,17 @@ void main() {
       expect(find.text('听视频歌单'), findsNothing);
       expect(find.text('我的歌单'), findsOneWidget);
       expect(find.byTooltip('播放倍速'), findsNothing);
-      await tester.tap(find.byTooltip('收起歌单'));
+      await tester.tap(find.text('收起列表'));
       await tester.pump(const Duration(milliseconds: 140));
       expect(find.byType(AnimatedCrossFade), findsOneWidget);
       await tester.pumpAndSettle();
-      expect(find.byTooltip('展开歌单'), findsOneWidget);
-      await tester.tap(find.byTooltip('展开歌单'));
+      expect(find.text('展开列表'), findsOneWidget);
+      expect(find.byIcon(Icons.album_outlined), findsNothing);
+      expect(
+        tester.getSize(find.byTooltip('播放')).height,
+        greaterThanOrEqualTo(60),
+      );
+      await tester.tap(find.text('展开列表'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('列表循环'));
       await tester.pump();

@@ -458,70 +458,6 @@ class _ListeningPageState extends State<ListeningPage> {
   String _time(Duration duration) =>
       '${duration.inMinutes}:${(duration.inSeconds % 60).toString().padLeft(2, '0')}';
 
-  Widget _nowPlaying() => Obx(() {
-    final song = controller.current.value;
-    return Center(
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (song != null && song.source.cover.isNotEmpty)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: Image.network(
-                    song.source.cover,
-                    width: 200,
-                    height: 200,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) =>
-                        const Icon(Icons.album_outlined, size: 120),
-                  ),
-                )
-              else
-                const Icon(Icons.album_outlined, size: 120),
-              const SizedBox(height: 20),
-              Text(
-                song?.name ?? '选择一首，开始播放',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              if (song != null)
-                Text(
-                  '${song.source.title} · P${song.source.page}',
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              if (song?.error != null)
-                Text(song!.error!, textAlign: TextAlign.center),
-              if (song != null)
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  children: [
-                    if (song.error != null)
-                      TextButton.icon(
-                        onPressed: () => controller.resume(),
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('重试播放'),
-                      ),
-                    TextButton.icon(
-                      onPressed: _busy
-                          ? null
-                          : () => _run(() => _replace(song)),
-                      icon: const Icon(Icons.find_replace),
-                      label: const Text('搜索换源'),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  });
-
   Widget _playbackBar() => Obx(() {
     final song = controller.current.value;
     final total = controller.duration.value.inSeconds;
@@ -535,7 +471,7 @@ class _ListeningPageState extends State<ListeningPage> {
       children: [
         IconButton(
           tooltip: '定时关闭',
-          icon: const Icon(Icons.bedtime_outlined),
+          icon: const Icon(Icons.bedtime_outlined, size: 28),
           onPressed: () => shutdownTimerService.showScheduleExitDialog(
             context,
             isFullScreen: false,
@@ -543,13 +479,15 @@ class _ListeningPageState extends State<ListeningPage> {
         ),
         IconButton(
           tooltip: '上一首',
-          icon: const Icon(Icons.skip_previous),
+          icon: const Icon(Icons.skip_previous, size: 30),
           onPressed: song == null
               ? null
               : () => controller.next(previous: true),
         ),
         IconButton.filled(
           tooltip: controller.playing.value ? '暂停' : '播放',
+          iconSize: 36,
+          padding: const EdgeInsets.all(12),
           icon: Icon(controller.playing.value ? Icons.pause : Icons.play_arrow),
           onPressed: song == null || controller.loading.value
               ? null
@@ -559,7 +497,7 @@ class _ListeningPageState extends State<ListeningPage> {
         ),
         IconButton(
           tooltip: '下一首',
-          icon: const Icon(Icons.skip_next),
+          icon: const Icon(Icons.skip_next, size: 30),
           onPressed: song == null ? null : () => controller.next(),
         ),
         IconButton(
@@ -572,12 +510,27 @@ class _ListeningPageState extends State<ListeningPage> {
           onPressed: controller.cycleMode,
         ),
         const Spacer(),
-        IconButton(
-          tooltip: _listExpanded ? '收起歌单' : '展开歌单',
-          icon: Icon(
-            _listExpanded ? Icons.queue_music : Icons.queue_music_outlined,
+        SizedBox(
+          width: 64,
+          child: TextButton(
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _listExpanded ? Icons.keyboard_arrow_down : Icons.queue_music,
+                  size: 28,
+                ),
+                Text(
+                  _listExpanded ? '收起列表' : '展开列表',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+            onPressed: () => setState(() => _listExpanded = !_listExpanded),
           ),
-          onPressed: () => setState(() => _listExpanded = !_listExpanded),
         ),
       ],
     );
@@ -585,7 +538,7 @@ class _ListeningPageState extends State<ListeningPage> {
       elevation: 3,
       color: Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -594,6 +547,7 @@ class _ListeningPageState extends State<ListeningPage> {
                 Expanded(
                   child: Text(
                     song?.name ?? '尚未选择歌曲',
+                    style: Theme.of(context).textTheme.titleMedium,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -613,7 +567,7 @@ class _ListeningPageState extends State<ListeningPage> {
             ),
             if (controller.loading.value) const LinearProgressIndicator(),
             SizedBox(
-              height: 24,
+              height: 40,
               child: Slider(
                 value: position.toDouble(),
                 max: total > 0 ? total.toDouble() : 1,
@@ -893,7 +847,7 @@ class _ListeningPageState extends State<ListeningPage> {
                 secondChild: SizedBox(
                   width: constraints.maxWidth,
                   height: constraints.maxHeight,
-                  child: _nowPlaying(),
+                  child: const SizedBox.expand(),
                 ),
               ),
             ),
