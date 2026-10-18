@@ -132,6 +132,19 @@ void main() {
       )?.artist,
       'MyGO!!!!!',
     );
+    final exact = version('exact-duration', 190, full);
+    final nearby = version(
+      'nearby-release',
+      182,
+      full.replaceAll('[00:10]', '[00:11]'),
+    );
+    expect(
+      selectSongLyrics(song('壱雫空'), [
+        nearby,
+        exact,
+      ], duration: const Duration(seconds: 190))?.artist,
+      'exact-duration',
+    );
     expect(selectSongLyrics(song('壱雫空'), candidates), isNull);
     expect(
       selectSongLyrics(

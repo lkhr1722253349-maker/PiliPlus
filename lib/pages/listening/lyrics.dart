@@ -330,6 +330,35 @@ LyricCandidate? selectSongLyrics(
       unique[identity] = candidate;
     }
   }
+  if (duration.inSeconds > 0) {
+    final matchingDuration = unique.values
+        .where(
+          (candidate) =>
+              candidate.duration > 0 &&
+              (candidate.duration - duration.inSeconds).abs() <= 2,
+        )
+        .toList();
+    if (matchingDuration.isNotEmpty) {
+      unique
+        ..clear()
+        ..addEntries(
+          matchingDuration.map(
+            (candidate) => MapEntry(
+              jsonEncode([
+                candidate.title.trim().toLowerCase(),
+                candidate.artist.trim().toLowerCase(),
+                candidate.duration,
+                lrcLines(candidate.lrc)
+                    .map((e) => [e.start.inMilliseconds, e.text])
+                    .toList(),
+                if (lrcLines(candidate.lrc).isEmpty) candidate.plain.trim(),
+              ]),
+              candidate,
+            ),
+          ),
+        );
+    }
+  }
   if (unique.length == 1) return unique.values.single;
   // Video titles often identify the performer even when no artist tag exists.
   final videoTitle = '${song.source.title} ${song.original.title}'
