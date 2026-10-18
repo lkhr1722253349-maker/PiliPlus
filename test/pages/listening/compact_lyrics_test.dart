@@ -6,7 +6,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
 void main() {
-  for (final size in [const Size(360, 640), const Size(1000, 800)]) {
+  for (final size in [
+    const Size(360, 640),
+    const Size(1000, 800),
+    const Size(360, 120),
+  ]) {
     testWidgets('three lyrics lines highlight the current line at $size', (
       tester,
     ) async {
@@ -19,9 +23,9 @@ void main() {
         label: 'test',
         source: 'test',
         lines: [
-          LyricLine(Duration.zero, 'previous'),
-          LyricLine(Duration(seconds: 1), 'current'),
-          LyricLine(Duration(seconds: 2), 'next'),
+          LyricLine(Duration.zero, 'previous', null, '上一句中文'),
+          LyricLine(Duration(seconds: 1), 'current', null, '当前句中文'),
+          LyricLine(Duration(seconds: 2), 'next', null, '下一句中文'),
           LyricLine(Duration(seconds: 3), 'later'),
         ],
       );
@@ -34,6 +38,11 @@ void main() {
       expect(find.text('previous'), findsOneWidget);
       expect(find.text('current'), findsOneWidget);
       expect(find.text('next'), findsOneWidget);
+      expect(find.text('当前句中文'), findsOneWidget);
+      expect(
+        tester.getCenter(find.text('当前句中文')).dy,
+        greaterThan(tester.getCenter(find.text('current')).dy),
+      );
       expect(find.text('later'), findsNothing);
       expect(find.byType(ImageFiltered), findsNothing);
       final center = tester.getCenter(find.text('current')).dx;

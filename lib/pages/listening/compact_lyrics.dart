@@ -24,10 +24,13 @@ class CompactListeningLyrics extends StatelessWidget {
               final position = controller.position.value;
               final offset = controller.lyricsOffset.value;
               final loading = controller.lyricsLoading.value;
-              final lines = track?.lines ?? <LyricLine>[];
+              final lines = track?.displayLines ?? <LyricLine>[];
               final index = lyricIndex(lines, position, offset);
               var previous = '', current = '', next = '';
+              var previousIndex = -1, nextIndex = -1;
               if (index >= 0) {
+                previousIndex = index - 1;
+                nextIndex = index + 1 < lines.length ? index + 1 : -1;
                 previous = index > 0 ? lines[index - 1].text : '';
                 current = lines[index].text;
                 next = index + 1 < lines.length ? lines[index + 1].text : '';
@@ -35,6 +38,12 @@ class CompactListeningLyrics extends StatelessWidget {
                 final upcoming = lines.indexWhere(
                   (e) => e.start > position - offset,
                 );
+                previousIndex = upcoming > 0
+                    ? upcoming - 1
+                    : upcoming == -1
+                    ? lines.length - 1
+                    : -1;
+                nextIndex = upcoming;
                 previous = upcoming > 0
                     ? lines[upcoming - 1].text
                     : upcoming == -1
@@ -49,22 +58,42 @@ class CompactListeningLyrics extends StatelessWidget {
                     ? '此歌词没有时间轴'
                     : '暂无同步歌词';
               }
-              Widget line(String text, bool focused) {
+              Widget line(String text, bool focused, int lyricIndex) {
+                final translated = lyricIndex >= 0 && lyricIndex < lines.length
+                    ? lines[lyricIndex].translation
+                    : '';
+                Widget labelText(String value, bool chinese) => SizedBox(
+                  height: lineHeight * (translated.isEmpty ? .9 : .45),
+                  width: double.infinity,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: tablet
+                        ? Alignment.centerRight
+                        : Alignment.center,
+                    child: Text(
+                      value,
+                      maxLines: 1,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: focused
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                        fontSize: chinese
+                            ? (tablet ? 19 : 15)
+                            : translated.isEmpty
+                            ? (tablet ? 26 : 21)
+                            : (tablet ? 24 : 19),
+                      ),
+                    ),
+                  ),
+                );
                 final label = SizedBox(
                   width: double.infinity,
-                  child: Text(
-                    text,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: tablet ? TextAlign.right : TextAlign.center,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: focused ? FontWeight.w600 : FontWeight.normal,
-                      fontSize: lineHeight < 40
-                          ? lineHeight * .6
-                          : tablet
-                          ? 26
-                          : 21,
-                    ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      labelText(text, false),
+                      if (translated.isNotEmpty) labelText(translated, true),
+                    ],
                   ),
                 );
                 return SizedBox(
@@ -110,9 +139,9 @@ class CompactListeningLyrics extends StatelessWidget {
                       key: ValueKey((track, index, previous, current, next)),
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        line(previous, false),
-                        line(current, true),
-                        line(next, false),
+                        line(previous, false, previousIndex),
+                        line(current, true, index),
+                        line(next, false, nextIndex),
                       ],
                     ),
                   ),

@@ -108,7 +108,10 @@ class ListeningController extends GetxController {
         original: song.original,
         source: song.source,
       );
-      final track = await service.preferred(snapshot, duration: duration.value);
+      final track = await service.preferred(
+        snapshot,
+        currentDuration: () => duration.value,
+      );
       if (request == _lyricsRequest &&
           identical(current.value, song) &&
           song.name == name)

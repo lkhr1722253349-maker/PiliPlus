@@ -85,8 +85,32 @@ class LyricLine {
   final Duration start;
   final Duration? end;
   final String text;
-  const LyricLine(this.start, this.text, [this.end]);
+  final String translation;
+  const LyricLine(this.start, this.text, [this.end, this.translation = '']);
 }
+
+List<LyricLine> bilingualLines(
+  List<LyricLine> original,
+  List<LyricLine> translated,
+) => original.map((line) {
+  LyricLine? match;
+  var distance = 751;
+  for (final candidate in translated) {
+    final delta = (candidate.start - line.start).inMilliseconds.abs();
+    if (delta < distance &&
+        candidate.text != line.text &&
+        RegExp(r'[\u3400-\u9fff]').hasMatch(candidate.text)) {
+      match = candidate;
+      distance = delta;
+    }
+  }
+  return LyricLine(
+    line.start,
+    line.text,
+    line.end,
+    line.translation.isNotEmpty ? line.translation : match?.text ?? '',
+  );
+}).toList();
 
 List<LyricLine> subtitleLines(List body) =>
     body
@@ -141,6 +165,7 @@ int lyricIndex(List<LyricLine> lines, Duration position, Duration offset) {
 class LyricCandidate {
   final String title, artist, plain, lrc;
   final String provider;
+  final String translatedLrc;
   final int duration;
   LyricCandidate(Map json)
     : title = json['trackName'] ?? '',
@@ -148,6 +173,7 @@ class LyricCandidate {
       plain = json['plainLyrics'] ?? '',
       lrc = json['syncedLyrics'] ?? '',
       provider = json['provider'] ?? 'LRCLIB',
+      translatedLrc = json['translatedLyrics'] ?? '',
       duration = (json['duration'] as num?)?.round() ?? 0;
 }
 
@@ -208,6 +234,7 @@ class LyricsSearch {
                   .join(' / '),
               'duration': ((song['duration'] as num? ?? 0) / 1000).round(),
               'syncedLyrics': text,
+              'translatedLyrics': lyrics['tlyric']?['lyric'] ?? '',
               'provider': '网易云音乐',
             });
           } catch (_) {
@@ -270,7 +297,56 @@ bool plausibleSongLyrics(
   return true;
 }
 
+LyricCandidate? selectSongLyrics(
+  ListeningSong song,
+  List<LyricCandidate> candidates, {
+  Duration duration = Duration.zero,
+  String? query,
+}) {
+  final unique = <String, LyricCandidate>{};
+  final name = (query ?? song.name).trim().toLowerCase();
+  for (final candidate in candidates) {
+    final lines = lrcLines(candidate.lrc);
+    if (candidate.title.trim().toLowerCase() != name ||
+        !plausibleSongLyrics(
+          song,
+          lines,
+          candidate.plain,
+          duration: duration,
+          candidateDuration: candidate.duration,
+        ))
+      continue;
+    final identity = jsonEncode([
+      candidate.title.trim().toLowerCase(),
+      candidate.artist.trim().toLowerCase(),
+      candidate.duration,
+      lines.map((e) => [e.start.inMilliseconds, e.text]).toList(),
+      if (lines.isEmpty) candidate.plain.trim(),
+    ]);
+    final previous = unique[identity];
+    if (previous == null ||
+        (previous.translatedLrc.isEmpty &&
+            candidate.translatedLrc.isNotEmpty)) {
+      unique[identity] = candidate;
+    }
+  }
+  if (unique.length == 1) return unique.values.single;
+  // Video titles often identify the performer even when no artist tag exists.
+  final videoTitle = '${song.source.title} ${song.original.title}'
+      .toLowerCase();
+  final artists = unique.values
+      .where(
+        (e) =>
+            e.artist.trim().length >= 2 &&
+            videoTitle.contains(e.artist.trim().toLowerCase()),
+      )
+      .toList();
+  return artists.length == 1 ? artists.single : null;
+}
+
 class LyricTrack {
+  List<LyricLine> get displayLines =>
+      original == null ? lines : bilingualLines(original!.lines, lines);
   final String label, language, source;
   final List<LyricLine> lines;
   final String plain;
@@ -304,6 +380,7 @@ class LyricTrack {
             'start': e.start.inMilliseconds,
             'end': e.end?.inMilliseconds,
             'text': e.text,
+            'translation': e.translation,
           },
         )
         .toList(),
@@ -325,6 +402,7 @@ class LyricTrack {
             Duration(milliseconds: e['start']),
             e['text'],
             e['end'] == null ? null : Duration(milliseconds: e['end']),
+            e['translation'] ?? '',
           ),
         )
         .toList(),
@@ -360,36 +438,31 @@ class ListeningLyrics {
   Future<LyricTrack?> preferred(
     ListeningSong song, {
     Duration duration = Duration.zero,
+    Duration Function()? currentDuration,
   }) async {
     final original = saved(song);
     if (original?.priority == 0 && original!.confirmed) return original;
     try {
-      final matches = (await search.search(song.name))
-          .where(
-            (e) =>
-                e.title.trim().toLowerCase() ==
-                    song.name.trim().toLowerCase() &&
-                plausibleSongLyrics(
-                  song,
-                  lrcLines(e.lrc),
-                  e.plain,
-                  duration: duration,
-                  candidateDuration: e.duration,
-                ),
-          )
-          .toList();
-      if (matches.length == 1) {
-        final candidate = matches.single;
+      final candidates = await search.search(song.name);
+      final candidate = selectSongLyrics(
+        song,
+        candidates,
+        duration: currentDuration?.call() ?? duration,
+      );
+      if (candidate != null) {
         final track = LyricTrack(
           label: '歌曲歌词 · ${candidate.artist}',
           source: '${candidate.provider} · ${candidate.title}',
-          lines: lrcLines(candidate.lrc),
+          lines: bilingualLines(
+            lrcLines(candidate.lrc),
+            lrcLines(candidate.translatedLrc),
+          ),
           plain: candidate.plain,
           priority: 0,
           matchVersion: 1,
         );
         await save(song, track);
-        return track;
+        return saved(song) ?? track;
       }
     } catch (_) {
       /* Saved song lyrics and translations remain available offline. */
@@ -421,6 +494,22 @@ class ListeningLyrics {
         !base!.confirmed &&
         !plausibleSongLyrics(song, base.lines, base.plain))
       return null;
+    if (track.priority == 0 &&
+        track.lines.every((e) => e.translation.isEmpty)) {
+      final translated = saved(song, translation: true);
+      if (translated?.original?.source == track.source) {
+        return LyricTrack(
+          label: track.label,
+          source: track.source,
+          lines: bilingualLines(track.lines, translated!.lines),
+          language: track.language,
+          plain: track.plain,
+          priority: track.priority,
+          confirmed: track.confirmed,
+          matchVersion: track.matchVersion,
+        );
+      }
+    }
     return track;
   }
 

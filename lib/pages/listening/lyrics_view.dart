@@ -89,23 +89,14 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
       if (!mounted) return [];
       LyricCandidate? chosen;
       if (automatic) {
-        final exact = candidates
-            .where(
-              (e) =>
-                  e.title.toLowerCase().trim() ==
-                      query.text.toLowerCase().trim() &&
-                  plausibleSongLyrics(
-                    widget.song,
-                    lrcLines(e.lrc),
-                    e.plain,
-                    duration: isCurrent
-                        ? widget.controller.duration.value
-                        : Duration.zero,
-                    candidateDuration: e.duration,
-                  ),
-            )
-            .toList();
-        if (exact.length == 1) chosen = exact.single;
+        chosen = selectSongLyrics(
+          widget.song,
+          candidates,
+          query: query.text,
+          duration: isCurrent
+              ? widget.controller.duration.value
+              : Duration.zero,
+        );
       } else {
         chosen = await showDialog<LyricCandidate>(
           context: context,
@@ -143,7 +134,10 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
         final track = LyricTrack(
           label: '歌曲歌词 · ${chosen.artist}',
           source: '${chosen.provider} · ${chosen.title}',
-          lines: lrcLines(chosen.lrc),
+          lines: bilingualLines(
+            lrcLines(chosen.lrc),
+            lrcLines(chosen.translatedLrc),
+          ),
           plain: chosen.plain,
           priority: 0,
           confirmed: !automatic,
@@ -151,10 +145,11 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
         );
         await service.save(widget.song, track);
         if (!mounted) return [];
+        final displayTrack = service.saved(widget.song) ?? track;
         setState(() {
           tracks.removeWhere((e) => e.priority == 0);
-          tracks.add(track);
-          selected = track;
+          tracks.add(displayTrack);
+          selected = displayTrack;
           active = -1;
         });
         _follow();
@@ -173,7 +168,7 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
       widget.controller.applyLyricsSettings(track, offset);
     }
     final index = lyricIndex(
-      track.lines,
+      track.displayLines,
       widget.controller.position.value,
       offset,
     );
@@ -368,9 +363,9 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
                 : ListView.builder(
                     controller: scroll,
                     itemExtent: 80,
-                    itemCount: selected!.lines.length,
+                    itemCount: selected!.displayLines.length,
                     itemBuilder: (context, index) {
-                      final line = selected!.lines[index];
+                      final line = selected!.displayLines[index];
                       return ListTile(
                         selected: index == active,
                         title: Text(
@@ -379,6 +374,14 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                         ),
+                        subtitle: line.translation.isEmpty
+                            ? null
+                            : Text(
+                                line.translation,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
                         onTap: !isCurrent
                             ? null
                             : () => widget.controller.seek(

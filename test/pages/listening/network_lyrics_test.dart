@@ -80,6 +80,7 @@ void main() {
                       : options.queryParameters['id'] == 123
                       ? {
                           'lrc': {'lyric': english},
+                          'tlyric': {'lyric': '[00:01]第一句中文'},
                         }
                       : {'nolyric': true},
                 ),
@@ -94,6 +95,7 @@ void main() {
       expect(found.single.artist, 'Test artist');
       expect(found.single.duration, 60);
       expect(lrcLines(found.single.lrc).length, 6);
+      expect(lrcLines(found.single.translatedLrc).single.text, '第一句中文');
       search.close();
     },
   );
@@ -107,5 +109,66 @@ void main() {
       confirmed: true,
     );
     expect(LyricTrack.fromJson(track.toJson()).confirmed, isTrue);
+  });
+  test('duplicate original song releases do not block matching a full-length video', () {
+    final full = english.replaceAll('[00:50]', '[02:50]');
+    LyricCandidate version(String artist, int duration, String lrc) =>
+        LyricCandidate({
+          'trackName': '壱雫空',
+          'artistName': artist,
+          'duration': duration,
+          'syncedLyrics': lrc,
+        });
+    final candidates = [
+      version('MyGO!!!!!', 190, full),
+      version('MyGO!!!!!', 190, full),
+      version('Cover artist', 85, english),
+    ];
+    expect(
+      selectSongLyrics(
+        song('壱雫空'),
+        candidates,
+        duration: const Duration(seconds: 190),
+      )?.artist,
+      'MyGO!!!!!',
+    );
+    expect(selectSongLyrics(song('壱雫空'), candidates), isNull);
+    expect(
+      selectSongLyrics(
+        song('different song'),
+        candidates,
+        duration: const Duration(seconds: 190),
+      ),
+      isNull,
+    );
+  });
+  test('bilingual timestamps align without shifting missing translations', () {
+    final lines = bilingualLines(
+      lrcLines('[00:01]first\n[00:03]second\n[00:05]third'),
+      lrcLines('[00:01.010]第一句\n[00:05]第三句'),
+    );
+    expect(lines.map((e) => e.translation), ['第一句', '', '第三句']);
+    final original = LyricTrack(
+      label: 'original',
+      source: 'test',
+      lines: lines,
+    );
+    expect(
+      LyricTrack.fromJson(original.toJson()).lines.first.translation,
+      '第一句',
+    );
+    final translated = LyricTrack(
+      label: 'translated',
+      source: 'test',
+      original: original,
+      lines: lrcLines('[00:01]第一句\n[00:03]第二句\n[00:05]第三句'),
+      priority: 1,
+    );
+    expect(translated.displayLines.map((e) => e.text), [
+      'first',
+      'second',
+      'third',
+    ]);
+    expect(translated.displayLines[1].translation, '第二句');
   });
 }
