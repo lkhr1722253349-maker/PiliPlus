@@ -49,6 +49,13 @@ void main() {
       expect(find.text('听视频歌单'), findsNothing);
       expect(find.text('我的歌单'), findsOneWidget);
       expect(find.byTooltip('播放倍速'), findsNothing);
+      await tester.tap(find.byTooltip('收起歌单'));
+      await tester.pump(const Duration(milliseconds: 140));
+      expect(find.byType(AnimatedCrossFade), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('展开歌单'), findsOneWidget);
+      await tester.tap(find.byTooltip('展开歌单'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('列表循环'));
       await tester.pump();
       expect(find.byTooltip('随机播放'), findsOneWidget);
@@ -122,7 +129,7 @@ void main() {
       player.focusCurrentSong();
       await tester.pumpAndSettle();
       expect(player.selected.id, playingList.id);
-      expect(find.text('曲目 90'), findsNWidgets(2));
+      expect(find.widgetWithText(ListTile, '曲目 90'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 1));

@@ -30,6 +30,7 @@ class _ListeningPageState extends State<ListeningPage> {
   bool _busy = false;
   bool _cancelImport = false;
   String _progress = '';
+  bool _listExpanded = true;
   final _playlistMenu = MenuController();
   final _songsScroll = ScrollController();
   late final Worker _focusWorker;
@@ -43,6 +44,7 @@ class _ListeningPageState extends State<ListeningPage> {
   }
 
   void _focusPlayingSong() {
+    if (mounted && !_listExpanded) setState(() => _listExpanded = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final song = controller.current.value;
       if (!mounted || song == null || !_songsScroll.hasClients) return;
@@ -61,7 +63,34 @@ class _ListeningPageState extends State<ListeningPage> {
 
   void _onUnavailable(ListeningSong song) {
     if (mounted && !_busy && ModalRoute.of(context)?.isCurrent == true) {
-      unawaited(_run(() => _replace(song)));
+      unawaited(
+        _run(() async {
+          final action = await showDialog<String>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('暂时无法播放'),
+              content: const Text('暂时无法取得可播放音源。可以再试一次，或搜索其他音源。'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('稍后'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, 'replace'),
+                  child: const Text('搜索换源'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, 'retry'),
+                  child: const Text('重试播放'),
+                ),
+              ],
+            ),
+          );
+          if (!mounted || !identical(song, controller.current.value)) return;
+          if (action == 'retry') await controller.resume();
+          if (action == 'replace') await _replace(song);
+        }),
+      );
     }
   }
 
@@ -431,133 +460,172 @@ class _ListeningPageState extends State<ListeningPage> {
 
   Widget _nowPlaying() => Obx(() {
     final song = controller.current.value;
+    return Center(
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (song != null && song.source.cover.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.network(
+                    song.source.cover,
+                    width: 200,
+                    height: 200,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) =>
+                        const Icon(Icons.album_outlined, size: 120),
+                  ),
+                )
+              else
+                const Icon(Icons.album_outlined, size: 120),
+              const SizedBox(height: 20),
+              Text(
+                song?.name ?? '选择一首，开始播放',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              if (song != null)
+                Text(
+                  '${song.source.title} · P${song.source.page}',
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              if (song?.error != null)
+                Text(song!.error!, textAlign: TextAlign.center),
+              if (song != null)
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  children: [
+                    if (song.error != null)
+                      TextButton.icon(
+                        onPressed: () => controller.resume(),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('重试播放'),
+                      ),
+                    TextButton.icon(
+                      onPressed: _busy
+                          ? null
+                          : () => _run(() => _replace(song)),
+                      icon: const Icon(Icons.find_replace),
+                      label: const Text('搜索换源'),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  });
+
+  Widget _playbackBar() => Obx(() {
+    final song = controller.current.value;
     final total = controller.duration.value.inSeconds;
     final position = controller.position.value.inSeconds.clamp(0, total);
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: SizedBox(
-              width: 112,
-              height: 112,
-              child: song != null && song.source.cover.isNotEmpty
-                  ? Image.network(
-                      song.source.cover,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) =>
-                          const Icon(Icons.album_outlined, size: 72),
-                    )
-                  : Icon(
-                      Icons.album_outlined,
-                      size: 72,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-            ),
+    final modeLabel = switch (controller.mode.value) {
+      ListeningMode.list => '列表循环',
+      ListeningMode.shuffle => '随机播放',
+      ListeningMode.single => '单曲循环',
+    };
+    final controls = Row(
+      children: [
+        IconButton(
+          tooltip: '定时关闭',
+          icon: const Icon(Icons.bedtime_outlined),
+          onPressed: () => shutdownTimerService.showScheduleExitDialog(
+            context,
+            isFullScreen: false,
           ),
-          const SizedBox(height: 12),
-          Text(
-            song?.name ?? '选择一首，开始听视频',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleLarge,
+        ),
+        IconButton(
+          tooltip: '上一首',
+          icon: const Icon(Icons.skip_previous),
+          onPressed: song == null
+              ? null
+              : () => controller.next(previous: true),
+        ),
+        IconButton.filled(
+          tooltip: controller.playing.value ? '暂停' : '播放',
+          icon: Icon(controller.playing.value ? Icons.pause : Icons.play_arrow),
+          onPressed: song == null || controller.loading.value
+              ? null
+              : () => controller.playing.value
+                    ? controller.pause()
+                    : controller.resume(),
+        ),
+        IconButton(
+          tooltip: '下一首',
+          icon: const Icon(Icons.skip_next),
+          onPressed: song == null ? null : () => controller.next(),
+        ),
+        IconButton(
+          tooltip: modeLabel,
+          icon: Icon(switch (controller.mode.value) {
+            ListeningMode.list => Icons.repeat,
+            ListeningMode.shuffle => Icons.shuffle,
+            ListeningMode.single => Icons.repeat_one,
+          }),
+          onPressed: controller.cycleMode,
+        ),
+        const Spacer(),
+        IconButton(
+          tooltip: _listExpanded ? '收起歌单' : '展开歌单',
+          icon: Icon(
+            _listExpanded ? Icons.queue_music : Icons.queue_music_outlined,
           ),
-          if (song != null)
-            Text(
-              '${song.source.title} · P${song.source.page}',
-              maxLines: 2,
-              textAlign: TextAlign.center,
-              overflow: TextOverflow.ellipsis,
-            ),
-          if (controller.loading.value) const LinearProgressIndicator(),
-          if (song?.error != null)
-            Text(
-              song!.error!,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          Slider(
-            value: position.toDouble(),
-            min: 0,
-            max: total > 0 ? total.toDouble() : 1,
-            label: _time(controller.position.value),
-            onChanged: song == null || total == 0
-                ? null
-                : (value) => controller.seek(Duration(seconds: value.round())),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(_time(controller.position.value)),
-              Text(_time(controller.duration.value)),
-            ],
-          ),
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              IconButton(
-                tooltip: '定时关闭',
-                icon: const Icon(Icons.bedtime_outlined),
-                onPressed: () => shutdownTimerService.showScheduleExitDialog(
-                  context,
-                  isFullScreen: false,
+          onPressed: () => setState(() => _listExpanded = !_listExpanded),
+        ),
+      ],
+    );
+    return Material(
+      elevation: 3,
+      color: Theme.of(context).colorScheme.surfaceContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    song?.name ?? '尚未选择歌曲',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-              IconButton(
-                tooltip: '上一首',
-                icon: const Icon(Icons.skip_previous),
-                onPressed: song == null
-                    ? null
-                    : () => controller.next(previous: true),
-              ),
-              IconButton.filled(
-                iconSize: 36,
-                tooltip: controller.playing.value ? '暂停' : '播放',
-                icon: Icon(
-                  controller.playing.value ? Icons.pause : Icons.play_arrow,
+                if (song?.error != null)
+                  IconButton(
+                    tooltip: '重试播放',
+                    onPressed: () => controller.resume(),
+                    icon: const Icon(Icons.refresh),
+                  ),
+                const SizedBox(width: 12),
+                Text(
+                  '${_time(controller.position.value)} / ${_time(controller.duration.value)}',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-                onPressed: song == null || controller.loading.value
+              ],
+            ),
+            if (controller.loading.value) const LinearProgressIndicator(),
+            SizedBox(
+              height: 24,
+              child: Slider(
+                value: position.toDouble(),
+                max: total > 0 ? total.toDouble() : 1,
+                onChanged: song == null || total == 0
                     ? null
-                    : () => controller.playing.value
-                          ? controller.pause()
-                          : controller.resume(),
+                    : (value) =>
+                          controller.seek(Duration(seconds: value.round())),
               ),
-              IconButton(
-                tooltip: '下一首',
-                icon: const Icon(Icons.skip_next),
-                onPressed: song == null ? null : () => controller.next(),
-              ),
-              IconButton(
-                tooltip: switch (controller.mode.value) {
-                  ListeningMode.list => '列表循环',
-                  ListeningMode.shuffle => '随机播放',
-                  ListeningMode.single => '单曲循环',
-                },
-                icon: Icon(switch (controller.mode.value) {
-                  ListeningMode.list => Icons.repeat,
-                  ListeningMode.shuffle => Icons.shuffle,
-                  ListeningMode.single => Icons.repeat_one,
-                }),
-                onPressed: controller.cycleMode,
-              ),
-            ],
-          ),
-          Wrap(
-            alignment: WrapAlignment.center,
-            children: [
-              TextButton.icon(
-                onPressed: song == null || _busy
-                    ? null
-                    : () => _run(() => _replace(song)),
-                icon: const Icon(Icons.find_replace),
-                label: const Text('搜索换源'),
-              ),
-            ],
-          ),
-        ],
+            ),
+            controls,
+          ],
+        ),
       ),
     );
   });
@@ -757,42 +825,37 @@ class _ListeningPageState extends State<ListeningPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      automaticallyImplyLeading: false,
+      titleSpacing: 4,
+      title: _playlistSelector(),
+      actions: [
+        MenuAnchor(
+          consumeOutsideTap: true,
+          menuChildren: [
+            MenuItemButton(
+              onPressed: () => _run(_addVideoLink),
+              child: const Text('从 BV 号 / 链接导入'),
+            ),
+            MenuItemButton(
+              onPressed: () => _run(_importFavorites),
+              child: const Text('从我的收藏夹导入'),
+            ),
+          ],
+          builder: (context, menu, child) => IconButton(
+            tooltip: '添加视频',
+            onPressed: _busy
+                ? null
+                : () => menu.isOpen ? menu.close() : menu.open(),
+            icon: const Icon(Icons.add),
+          ),
+        ),
+      ],
+    ),
     body: SafeArea(
+      top: false,
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: _playlistSelector(),
-                  ),
-                ),
-                MenuAnchor(
-                  consumeOutsideTap: true,
-                  menuChildren: [
-                    MenuItemButton(
-                      onPressed: () => _run(_addVideoLink),
-                      child: const Text('从 BV 号 / 链接导入'),
-                    ),
-                    MenuItemButton(
-                      onPressed: () => _run(_importFavorites),
-                      child: const Text('从我的收藏夹导入'),
-                    ),
-                  ],
-                  builder: (context, menu, child) => IconButton(
-                    tooltip: '添加视频',
-                    onPressed: _busy
-                        ? null
-                        : () => menu.isOpen ? menu.close() : menu.open(),
-                    icon: const Icon(Icons.add),
-                  ),
-                ),
-              ],
-            ),
-          ),
           if (_busy) const LinearProgressIndicator(),
           if (_progress.isNotEmpty)
             Padding(
@@ -815,34 +878,27 @@ class _ListeningPageState extends State<ListeningPage> {
             ),
           Expanded(
             child: LayoutBuilder(
-              builder: (context, constraints) {
-                if (constraints.maxWidth >= 840) {
-                  return Row(
-                    children: [
-                      SizedBox(
-                        width: 380,
-                        child: SingleChildScrollView(child: _nowPlaying()),
-                      ),
-                      const VerticalDivider(width: 1),
-                      Expanded(child: _songList()),
-                    ],
-                  );
-                }
-                return Column(
-                  children: [
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: constraints.maxHeight * 0.6,
-                      ),
-                      child: SingleChildScrollView(child: _nowPlaying()),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(child: _songList()),
-                  ],
-                );
-              },
+              builder: (context, constraints) => AnimatedCrossFade(
+                duration: const Duration(milliseconds: 280),
+                firstCurve: Curves.easeInOut,
+                secondCurve: Curves.easeInOut,
+                crossFadeState: _listExpanded
+                    ? CrossFadeState.showFirst
+                    : CrossFadeState.showSecond,
+                firstChild: SizedBox(
+                  width: constraints.maxWidth,
+                  height: constraints.maxHeight,
+                  child: _songList(),
+                ),
+                secondChild: SizedBox(
+                  width: constraints.maxWidth,
+                  height: constraints.maxHeight,
+                  child: _nowPlaying(),
+                ),
+              ),
             ),
           ),
+          _playbackBar(),
         ],
       ),
     ),

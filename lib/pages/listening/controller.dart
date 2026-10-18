@@ -49,6 +49,8 @@ class ListeningController extends GetxController {
   bool _ownsMediaSession = false;
   void Function(ListeningSong song)? onUnavailable;
   String? _notifiedFailure;
+  int _streamRetries = 0;
+  String? _openError;
 
   ListeningPlaylist get selected =>
       playlists.firstWhere((e) => e.id == selectedId.value);
@@ -111,6 +113,8 @@ class ListeningController extends GetxController {
   void cycleMode() {
     mode.value = ListeningMode
         .values[(mode.value.index + 1) % ListeningMode.values.length];
+    videoPlayerServiceHandler?.updateListeningMode(mode.value.name);
+    _publish();
   }
 
   Future<void> removeSong(ListeningPlaylist list, ListeningSong song) async {
@@ -208,7 +212,11 @@ class ListeningController extends GetxController {
   void _notifyUnavailable(ListeningSong song) {
     if (_notifiedFailure == song.id) return;
     _notifiedFailure = song.id;
-    scheduleMicrotask(() => onUnavailable?.call(song));
+    scheduleMicrotask(() {
+      if (identical(current.value, song) && song.error != null) {
+        onUnavailable?.call(song);
+      }
+    });
   }
 
   Future<Player> _createPlayer() async {
@@ -242,13 +250,30 @@ class ListeningController extends GetxController {
       player.stream.error.listen((error) {
         final song = current.value;
         if (song != null) {
-          song.error = '播放失败，可重试或换源：$error';
-          unawaited(save());
-          _notifyUnavailable(song);
+          if (loading.value) {
+            _openError = error;
+          } else if (_ownsMediaSession && _streamRetries < 2) {
+            final list = playlists
+                .where((list) => list.id == _playingPlaylistId)
+                .firstOrNull;
+            if (list != null)
+              unawaited(
+                play(
+                  list,
+                  song,
+                  attempt: _streamRetries + 1,
+                  resumeAt: position.value,
+                ),
+              );
+          } else if (_ownsMediaSession) {
+            song.error = '重试后仍无法播放，可再试一次或换源：$error';
+            unawaited(save());
+            _notifyUnavailable(song);
+          }
         }
       }),
       player.stream.completed.listen((value) {
-        if (!value) return;
+        if (!value || loading.value || current.value?.error != null) return;
         if (shutdownTimerService.isWaiting) {
           shutdownTimerService.handleWaiting();
         } else {
@@ -266,12 +291,14 @@ class ListeningController extends GetxController {
       ?..onPlay = resume
       ..onPause = pause
       ..onSeek = seek
+      ..onListeningMode = cycleMode
       ..onSkipToNext = () {
         unawaited(next());
       }
       ..onSkipToPrevious = () {
         unawaited(next(previous: true));
       };
+    videoPlayerServiceHandler?.updateListeningMode(mode.value.name);
     shutdownTimerService
       ..onPause = () {
         unawaited(pause());
@@ -312,8 +339,14 @@ class ListeningController extends GetxController {
     );
   }
 
-  Future<void> play(ListeningPlaylist list, ListeningSong song) async {
+  Future<void> play(
+    ListeningPlaylist list,
+    ListeningSong song, {
+    int attempt = 0,
+    Duration? resumeAt,
+  }) async {
     final request = ++_request;
+    _streamRetries = attempt;
     _notifiedFailure = null;
     loading.value = true;
     await _player?.pause();
@@ -322,53 +355,20 @@ class ListeningController extends GetxController {
     _playingPlaylistId = list.id;
     position.value = duration.value = Duration.zero;
     try {
-      if (song.source.cid == 0) throw StateError('原视频信息不可用，请换源');
-      final result = await VideoHttp.videoUrl(
-        bvid: song.source.bvid,
-        cid: song.source.cid,
-        qn: 64,
-        tryLook: true,
-        videoType: VideoType.ugc,
-      );
+      await openSong(list, song, request);
       if (request != _request) return;
-      if (result case Success(:final response)) {
-        final audios = response.dash?.audio;
-        final urls = audios != null && audios.isNotEmpty
-            ? audios.first.playUrls
-            : response.durl?.firstOrNull?.playUrls;
-        if (urls == null || urls.isEmpty) throw StateError('没有可播放的音源，请换源');
-        final url = VideoUtils.getCdnUrl(urls, isAudio: true);
-        final player = await _ensurePlayer();
-        if (request != _request) return;
-        await videoPlayerServiceHandler?.pause();
-        await PlPlayerController.pauseIfExists();
-        if (request != _request) return;
-        _bindSession();
-        await audioSessionHandler?.setActive(true);
-        if (request != _request) return;
-        videoPlayerServiceHandler?.setListeningMediaItem(
-          MediaItem(
-            id: 'listening:${song.id}',
-            title: song.name,
-            album: list.name,
-            artUri: song.source.cover.isEmpty
-                ? null
-                : Uri.tryParse(song.source.cover),
-          ),
-        );
-        player.setMediaHeader(
-          userAgent: BrowserUa.pc,
-          headers: {'Referer': 'https://www.bilibili.com/'},
-        );
-        await player.open(Media(url));
-        await player.setRate(speed.value);
-        song.error = null;
-      } else {
-        throw StateError(result.toString());
-      }
+      if (resumeAt != null && resumeAt > Duration.zero)
+        await _player?.seek(resumeAt);
+      song.error = null;
     } catch (e) {
       if (request != _request) return;
-      song.error = '播放失败，可重试或搜索换源：$e';
+      if (attempt < 2 && song.source.cid != 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        if (request != _request) return;
+        await play(list, song, attempt: attempt + 1, resumeAt: resumeAt);
+        return;
+      }
+      song.error = '重试后仍无法播放，可再试一次或搜索换源：$e';
       SmartDialog.showToast(song.error!);
       _notifyUnavailable(song);
     } finally {
@@ -376,6 +376,59 @@ class ListeningController extends GetxController {
         loading.value = false;
         await save();
       }
+    }
+  }
+
+  Future<void> openSong(
+    ListeningPlaylist list,
+    ListeningSong song,
+    int request,
+  ) async {
+    if (song.source.cid == 0) throw StateError('原视频信息不可用，请换源');
+    final result = await VideoHttp.videoUrl(
+      bvid: song.source.bvid,
+      cid: song.source.cid,
+      qn: 64,
+      tryLook: true,
+      videoType: VideoType.ugc,
+    );
+    if (request != _request) return;
+    if (result case Success(:final response)) {
+      final audios = response.dash?.audio;
+      final urls = audios != null && audios.isNotEmpty
+          ? audios.first.playUrls
+          : response.durl?.firstOrNull?.playUrls;
+      if (urls == null || urls.isEmpty) throw StateError('没有可播放的音源，请换源');
+      final url = VideoUtils.getCdnUrl(urls, isAudio: true);
+      final player = await _ensurePlayer();
+      if (request != _request) return;
+      await videoPlayerServiceHandler?.pause();
+      await PlPlayerController.pauseIfExists();
+      if (request != _request) return;
+      _bindSession();
+      await audioSessionHandler?.setActive(true);
+      if (request != _request) return;
+      videoPlayerServiceHandler?.setListeningMediaItem(
+        MediaItem(
+          id: 'listening:${song.id}',
+          title: song.name,
+          album: list.name,
+          artUri: song.source.cover.isEmpty
+              ? null
+              : Uri.tryParse(song.source.cover),
+        ),
+      );
+      player.setMediaHeader(
+        userAgent: BrowserUa.pc,
+        headers: {'Referer': 'https://www.bilibili.com/'},
+      );
+      _openError = null;
+      await player.open(Media(url));
+      if (_openError != null) throw StateError(_openError!);
+      await player.setRate(speed.value);
+      song.error = null;
+    } else {
+      throw StateError(result.toString());
     }
   }
 

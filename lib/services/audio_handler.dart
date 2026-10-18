@@ -57,6 +57,22 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
   Future<void>? Function(Duration position)? onSeek;
   void Function()? onSkipToNext;
   void Function()? onSkipToPrevious;
+  void Function()? onListeningMode;
+  String listeningMode = 'list';
+  bool _listening = false;
+
+  void updateListeningMode(String mode) {
+    listeningMode = mode;
+    _lastConfig = null;
+  }
+
+  @override
+  Future<dynamic> customAction(
+    String name, [
+    Map<String, dynamic>? extras,
+  ]) async {
+    if (_listening && name == 'listeningMode') onListeningMode?.call();
+  }
 
   @override
   Future<void> play() {
@@ -121,12 +137,17 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
   }
 
   void setListeningMediaItem(MediaItem item) {
+    _listening = true;
+    _lastConfig = null;
     _item.removeWhere((e) => e.id.startsWith('listening:'));
     _item.add(item);
     setMediaItem(item);
   }
 
   void clearListeningMediaItem() {
+    _listening = false;
+    onListeningMode = null;
+    _lastConfig = null;
     _item.removeWhere((e) => e.id.startsWith('listening:'));
     if (_item.isNotEmpty) setMediaItem(_item.last);
   }
@@ -193,7 +214,13 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
         updatePosition: position,
         speed: speed,
         controls: [
-          if (!isLive)
+          if (_listening)
+            const MediaControl(
+              androidIcon: 'drawable/ic_listening_previous',
+              label: '上一首',
+              action: .skipToPrevious,
+            )
+          else if (!isLive)
             const MediaControl(
               androidIcon: 'drawable/ic_player_rewind_10s',
               label: 'Rewind',
@@ -211,7 +238,22 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
               label: 'Play',
               action: .play,
             ),
-          if (!isLive)
+          if (_listening) ...[
+            const MediaControl(
+              androidIcon: 'drawable/ic_listening_next',
+              label: '下一首',
+              action: .skipToNext,
+            ),
+            MediaControl.custom(
+              androidIcon: 'drawable/ic_listening_$listeningMode',
+              label: switch (listeningMode) {
+                'shuffle' => '随机播放',
+                'single' => '单曲循环',
+                _ => '列表循环',
+              },
+              name: 'listeningMode',
+            ),
+          ] else if (!isLive)
             const MediaControl(
               androidIcon: 'drawable/ic_player_fast_forward_10s',
               label: 'Fast Forward',
@@ -219,6 +261,15 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
             ),
         ],
         playing: playing,
+        androidCompactActionIndices: _listening ? const [0, 1, 2] : null,
+        repeatMode: !_listening
+            ? AudioServiceRepeatMode.none
+            : listeningMode == 'single'
+            ? AudioServiceRepeatMode.one
+            : AudioServiceRepeatMode.all,
+        shuffleMode: _listening && listeningMode == 'shuffle'
+            ? AudioServiceShuffleMode.all
+            : AudioServiceShuffleMode.none,
         systemActions: const {.seek},
       ),
     );
