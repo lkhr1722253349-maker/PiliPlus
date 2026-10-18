@@ -11,20 +11,24 @@ import 'package:hive_ce/hive.dart';
 import 'package:material_ui/material_ui.dart';
 
 class FakeSearch extends LyricsSearch {
+  final queries = <String>[];
   @override
-  Future<List<LyricCandidate>> search(String name) async => [
-    LyricCandidate({
-      'trackName': name,
-      'artistName': 'Test artist',
-      'syncedLyrics': '[00:01]synthetic line',
-      'duration': 5,
-    }),
-  ];
+  Future<List<LyricCandidate>> search(String name) async {
+    queries.add(name);
+    return [
+      LyricCandidate({
+        'trackName': name,
+        'artistName': 'Test artist',
+        'syncedLyrics': '[00:01]synthetic line\n[00:10]another synthetic line\n[00:20]third synthetic line\n[00:30]fourth synthetic line\n[00:40]fifth synthetic line\n[00:50]sixth synthetic line',
+        'duration': 5,
+      }),
+    ];
+  }
 }
 
 class FakeLyrics extends ListeningLyrics {
   @override
-  final LyricsSearch search = FakeSearch();
+  final FakeSearch search = FakeSearch();
   @override
   Future<void> save(ListeningSong song, LyricTrack track) async {}
   @override
@@ -37,14 +41,6 @@ class FakeLyrics extends ListeningLyrics {
           priority: 1,
         )
       : null;
-  @override
-  Future<List<LyricTrack>> subtitles(ListeningSong song) async => [
-    const LyricTrack(
-      label: '视频字幕 · 中文',
-      source: 'test',
-      lines: [LyricLine(Duration.zero, '测试字幕')],
-    ),
-  ];
 }
 
 void main() {
@@ -60,7 +56,7 @@ void main() {
   });
   for (final size in [const Size(360, 640), const Size(1000, 500)]) {
     testWidgets(
-      'lyrics prefers song search over saved translation and subtitles at $size',
+      'lyrics prefers song search over saved translation without fetching subtitles at $size',
       (tester) async {
         tester.view.physicalSize = size;
         tester.view.devicePixelRatio = 1;
@@ -69,6 +65,8 @@ void main() {
         final song = ListeningSong(
           id: 'test',
           name: 'test song',
+          chineseName: '中文译名',
+          translatedNameSource: 'test song',
           original: const SongSource(
             bvid: 'BV1',
             aid: 1,
@@ -99,6 +97,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        expect(service.search.queries, ['test song']);
         expect(tester.takeException(), isNull);
         expect(find.text('synthetic line'), findsOneWidget);
         final dropdown = tester.widget<DropdownButton<LyricTrack>>(
@@ -107,7 +106,7 @@ void main() {
         expect(dropdown.value?.priority, 0);
         expect(
           dropdown.items?.map((e) => e.value!.priority),
-          containsAll([0, 1, 2]),
+          containsAll([0, 1]),
         );
         controller.position.value = const Duration(seconds: 2);
         await tester.pumpAndSettle();

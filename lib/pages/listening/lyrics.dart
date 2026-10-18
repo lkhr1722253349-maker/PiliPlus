@@ -1,8 +1,6 @@
 import 'dart:convert';
 
 import 'package:PiliPlus/http/loading_state.dart';
-import 'package:PiliPlus/http/init.dart';
-import 'package:PiliPlus/http/video.dart';
 import 'package:PiliPlus/http/music.dart';
 import 'package:PiliPlus/http/user.dart';
 import 'package:PiliPlus/models_new/video/video_tag/data.dart';
@@ -142,16 +140,33 @@ int lyricIndex(List<LyricLine> lines, Duration position, Duration offset) {
 
 class LyricCandidate {
   final String title, artist, plain, lrc;
+  final String provider;
   final int duration;
   LyricCandidate(Map json)
     : title = json['trackName'] ?? '',
       artist = json['artistName'] ?? '',
       plain = json['plainLyrics'] ?? '',
       lrc = json['syncedLyrics'] ?? '',
+      provider = json['provider'] ?? 'LRCLIB',
       duration = (json['duration'] as num?)?.round() ?? 0;
 }
 
 class LyricsSearch {
+  final Dio _music;
+  LyricsSearch({Dio? music})
+    : _music =
+          music ??
+          Dio(
+            BaseOptions(
+              baseUrl: 'https://music.163.com',
+              connectTimeout: const Duration(seconds: 8),
+              receiveTimeout: const Duration(seconds: 10),
+              headers: {
+                'Referer': 'https://music.163.com/',
+                'User-Agent': 'Mozilla/5.0',
+              },
+            ),
+          );
   // A separate client keeps Bilibili cookies and account interceptors off LRCLIB.
   final Dio _client = Dio(
     BaseOptions(
@@ -164,6 +179,47 @@ class LyricsSearch {
     ),
   );
   Future<List<LyricCandidate>> search(String name) async {
+    try {
+      final response = await _music.get(
+        '/api/search/get',
+        queryParameters: {'s': name, 'type': 1, 'limit': 10},
+      );
+      final data = response.data is String
+          ? jsonDecode(response.data)
+          : response.data;
+      final songs = (data['result']?['songs'] as List? ?? []).whereType<Map>();
+      final found = await Future.wait(
+        songs.map((song) async {
+          try {
+            final response = await _music.get(
+              '/api/song/lyric',
+              queryParameters: {'id': song['id'], 'lv': -1, 'tv': -1},
+            );
+            final lyrics = response.data is String
+                ? jsonDecode(response.data)
+                : response.data;
+            final text = lyrics['lrc']?['lyric'] as String? ?? '';
+            if (lrcLines(text).isEmpty) return null;
+            return LyricCandidate({
+              'trackName': song['name'],
+              'artistName': (song['artists'] as List? ?? [])
+                  .whereType<Map>()
+                  .map((e) => e['name'])
+                  .join(' / '),
+              'duration': ((song['duration'] as num? ?? 0) / 1000).round(),
+              'syncedLyrics': text,
+              'provider': '网易云音乐',
+            });
+          } catch (_) {
+            return null;
+          }
+        }),
+      );
+      final available = found.whereType<LyricCandidate>().toList();
+      if (available.isNotEmpty) return available;
+    } catch (_) {
+      /* Try the independent lyrics database below. */
+    }
     final result = await _client.get(
       '/api/search',
       queryParameters: {'q': name},
@@ -176,7 +232,42 @@ class LyricsSearch {
         .toList();
   }
 
-  void close() => _client.close(force: true);
+  void close() {
+    _music.close(force: true);
+    _client.close(force: true);
+  }
+}
+
+/// A title alone cannot distinguish unrelated songs with the same name.
+/// Sparse or language-incompatible results remain available for manual selection.
+bool plausibleSongLyrics(
+  ListeningSong song,
+  List<LyricLine> lines,
+  String plain, {
+  Duration duration = Duration.zero,
+  int candidateDuration = 0,
+}) {
+  final text = lines.isNotEmpty ? lines.map((e) => e.text).join('\n') : plain;
+  final content = text.split('\n').where((e) => e.trim().isNotEmpty).toList();
+  if (content.length < 6 || text.replaceAll(RegExp(r'\s'), '').length < 80)
+    return false;
+  final title = '${song.name} ${song.source.title}';
+  for (final script in [r'[\u3040-\u30ff]', r'[\uac00-\ud7af]']) {
+    if (RegExp(script).hasMatch(title) && !RegExp(script).hasMatch(text))
+      return false;
+  }
+  if (lines.isNotEmpty && lines.last.start.inSeconds < 30) return false;
+  final seconds = duration.inSeconds;
+  if (seconds > 0) {
+    if (candidateDuration > 0 &&
+        (candidateDuration - seconds).abs() > (seconds * .03).clamp(5, 12))
+      return false;
+    if (lines.isNotEmpty &&
+        (lines.last.start.inSeconds < seconds * .45 ||
+            lines.last.start.inSeconds > seconds + 15))
+      return false;
+  }
+  return true;
 }
 
 class LyricTrack {
@@ -185,6 +276,8 @@ class LyricTrack {
   final String plain;
   final int priority;
   final LyricTrack? original;
+  final bool confirmed;
+  final int matchVersion;
   const LyricTrack({
     required this.label,
     required this.source,
@@ -193,6 +286,8 @@ class LyricTrack {
     this.plain = '',
     this.priority = 2,
     this.original,
+    this.confirmed = false,
+    this.matchVersion = 0,
   });
   Map<String, dynamic> toJson() => {
     'label': label,
@@ -201,6 +296,8 @@ class LyricTrack {
     'plain': plain,
     'priority': priority,
     'original': original?.toJson(),
+    'confirmed': confirmed,
+    'matchVersion': matchVersion,
     'lines': lines
         .map(
           (e) => {
@@ -217,6 +314,8 @@ class LyricTrack {
     source: json['source'],
     plain: json['plain'] ?? '',
     priority: json['priority'] ?? 2,
+    confirmed: json['confirmed'] ?? false,
+    matchVersion: json['matchVersion'] ?? 0,
     original: json['original'] is Map
         ? LyricTrack.fromJson(json['original'])
         : null,
@@ -258,45 +357,71 @@ class ListeningLyrics {
     return null;
   }
 
-  Future<LyricTrack?> preferred(ListeningSong song) async {
+  Future<LyricTrack?> preferred(
+    ListeningSong song, {
+    Duration duration = Duration.zero,
+  }) async {
     final original = saved(song);
-    if (original?.priority == 0) return original;
+    if (original?.priority == 0 && original!.confirmed) return original;
     try {
       final matches = (await search.search(song.name))
           .where(
             (e) =>
-                e.title.trim().toLowerCase() == song.name.trim().toLowerCase(),
+                e.title.trim().toLowerCase() ==
+                    song.name.trim().toLowerCase() &&
+                plausibleSongLyrics(
+                  song,
+                  lrcLines(e.lrc),
+                  e.plain,
+                  duration: duration,
+                  candidateDuration: e.duration,
+                ),
           )
           .toList();
       if (matches.length == 1) {
         final candidate = matches.single;
         final track = LyricTrack(
           label: '歌曲歌词 · ${candidate.artist}',
-          source: 'LRCLIB · ${candidate.title}',
+          source: '${candidate.provider} · ${candidate.title}',
           lines: lrcLines(candidate.lrc),
           plain: candidate.plain,
           priority: 0,
+          matchVersion: 1,
         );
         await save(song, track);
         return track;
       }
     } catch (_) {
-      /* Saved translations and subtitles remain available offline. */
+      /* Saved song lyrics and translations remain available offline. */
     }
     final translation = saved(song, translation: true);
     if (translation != null) return translation;
     if (original != null) return original;
-    final available = await subtitles(song);
-    if (available.isEmpty) return null;
-    await save(song, available.first);
-    return available.first;
+    return null;
   }
 
   LyricTrack? saved(ListeningSong song, {bool translation = false}) {
     final json = GStorage.localCache.get(
       'listeningLyrics:${translation ? 'translation:' : ''}${sourceKey(song)}',
     );
-    return json is Map ? LyricTrack.fromJson(json) : null;
+    if (json is! Map) return null;
+    final track = LyricTrack.fromJson(json);
+    if (track.priority == 2 || track.original?.priority == 2) return null;
+    if (track.priority == 0 && !track.confirmed && track.matchVersion < 1)
+      return null;
+    if (track.priority == 0 &&
+        !track.confirmed &&
+        !plausibleSongLyrics(song, track.lines, track.plain))
+      return null;
+    // A translation of a rejected match must not bring the wrong song back.
+    final base = track.original;
+    if (base?.priority == 0 && !base!.confirmed && base.matchVersion < 1)
+      return null;
+    if (base?.priority == 0 &&
+        !base!.confirmed &&
+        !plausibleSongLyrics(song, base.lines, base.plain))
+      return null;
+    return track;
   }
 
   Future<void> save(
@@ -306,40 +431,6 @@ class ListeningLyrics {
     'listeningLyrics:${track.priority == 1 ? 'translation:' : ''}${sourceKey(song)}',
     track.toJson(),
   );
-  Future<List<LyricTrack>> subtitles(ListeningSong song) async {
-    final result = await VideoHttp.playInfo(
-      bvid: song.source.bvid,
-      cid: song.source.cid,
-    );
-    if (result case Success(:final response)) {
-      final tracks = <LyricTrack>[];
-      // Prefer existing Chinese subtitles. Limit downloads, not available choices.
-      for (final subtitle in (response.subtitle?.subtitles ?? []).take(4)) {
-        final url = subtitle.subtitleUrl;
-        if (url == null || url.isEmpty) continue;
-        try {
-          final response = await Request().get(
-            url.startsWith('//') ? 'https:$url' : url,
-          );
-          final body = response.data['body'];
-          if (body is List)
-            tracks.add(
-              LyricTrack(
-                label: '视频字幕 · ${subtitle.lanDoc ?? subtitle.lan}',
-                source: url,
-                language: subtitle.lan,
-                lines: subtitleLines(body),
-              ),
-            );
-        } catch (_) {
-          /* One unavailable language does not discard the others. */
-        }
-      }
-      return tracks.where((e) => e.lines.isNotEmpty).toList();
-    }
-    return [];
-  }
-
   static List<String> chunks(String text) {
     final parts = <String>[];
     var current = StringBuffer();

@@ -1,5 +1,3 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:PiliPlus/pages/listening/controller.dart';
 import 'package:PiliPlus/pages/listening/lyrics.dart';
 import 'package:get/get.dart';
@@ -76,25 +74,49 @@ class CompactListeningLyrics extends StatelessWidget {
                         ? label
                         : Opacity(
                             opacity: .35,
-                            child: ImageFiltered(
-                              imageFilter: ImageFilter.blur(
-                                sigmaX: 1.2,
-                                sigmaY: 1.2,
-                              ),
-                              child: label,
-                            ),
+                            child: label,
                           ),
                   ),
                 );
               }
 
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  line(previous, false),
-                  line(current, true),
-                  line(next, false),
-                ],
+              return ClipRect(
+                child: SizedBox(
+                  height: lineHeight * 3,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 380),
+                    switchInCurve: Curves.easeInOutCubic,
+                    switchOutCurve: Curves.easeInOutCubic,
+                    layoutBuilder: (currentChild, previousChildren) => Stack(
+                      alignment: Alignment.center,
+                      children: [...previousChildren, ?currentChild],
+                    ),
+                    transitionBuilder: (child, animation) => AnimatedBuilder(
+                      animation: animation,
+                      child: child,
+                      builder: (context, child) => FractionalTranslation(
+                        translation: Offset(
+                          0,
+                          (1 - animation.value) /
+                              3 *
+                              (animation.status == AnimationStatus.reverse
+                                  ? -1
+                                  : 1),
+                        ),
+                        child: Opacity(opacity: animation.value, child: child),
+                      ),
+                    ),
+                    child: Column(
+                      key: ValueKey((track, index, previous, current, next)),
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        line(previous, false),
+                        line(current, true),
+                        line(next, false),
+                      ],
+                    ),
+                  ),
+                ),
               );
             }),
           ),

@@ -65,12 +65,8 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
 
   Future<void> _load() async {
     try {
-      final results = await Future.wait([
-        service.subtitles(widget.song).catchError((_) => <LyricTrack>[]),
-        _search(automatic: true),
-      ]);
+      await _search(automatic: true);
       if (!mounted) return;
-      tracks.addAll(results.first);
       setState(() {
         _choosePreferred();
         busy = false;
@@ -86,6 +82,8 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
   }
 
   Future<List<LyricTrack>> _search({bool automatic = false}) async {
+    if (automatic && tracks.any((e) => e.priority == 0 && e.confirmed))
+      return [];
     try {
       final candidates = await service.search.search(query.text.trim());
       if (!mounted) return [];
@@ -95,7 +93,16 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
             .where(
               (e) =>
                   e.title.toLowerCase().trim() ==
-                  query.text.toLowerCase().trim(),
+                      query.text.toLowerCase().trim() &&
+                  plausibleSongLyrics(
+                    widget.song,
+                    lrcLines(e.lrc),
+                    e.plain,
+                    duration: isCurrent
+                        ? widget.controller.duration.value
+                        : Duration.zero,
+                    candidateDuration: e.duration,
+                  ),
             )
             .toList();
         if (exact.length == 1) chosen = exact.single;
@@ -115,7 +122,7 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
                             (e) => ListTile(
                               title: Text(e.title),
                               subtitle: Text(
-                                '${e.artist} · ${e.duration} 秒 · ${e.lrc.isEmpty ? '无时间轴' : '同步歌词'}',
+                                '${e.provider} · ${e.artist} · ${e.duration} 秒 · ${e.lrc.isEmpty ? '无时间轴' : '同步歌词'}',
                               ),
                               onTap: () => Navigator.pop(context, e),
                             ),
@@ -135,10 +142,12 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
       if (chosen != null && mounted) {
         final track = LyricTrack(
           label: '歌曲歌词 · ${chosen.artist}',
-          source: 'LRCLIB · ${chosen.title}',
+          source: '${chosen.provider} · ${chosen.title}',
           lines: lrcLines(chosen.lrc),
           plain: chosen.plain,
           priority: 0,
+          confirmed: !automatic,
+          matchVersion: 1,
         );
         await service.save(widget.song, track);
         if (!mounted) return [];
@@ -151,7 +160,7 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
         _follow();
       }
     } catch (e) {
-      if (mounted) setState(() => message = '歌词搜索暂不可用，可使用已保存歌词或视频字幕');
+      if (mounted) setState(() => message = '网络歌词搜索暂不可用，可稍后重试或选择已保存歌词');
     }
     return [];
   }
@@ -349,7 +358,7 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
           Expanded(
             child: selected == null
                 ? Center(
-                    child: Text(busy ? '正在查找歌词和字幕…' : '暂无匹配歌词或可用字幕，可修改歌名搜索'),
+                    child: Text(busy ? '正在联网搜索歌词…' : '暂无可靠匹配歌词，请点击搜索选择歌曲版本'),
                   )
                 : selected!.lines.isEmpty
                 ? SingleChildScrollView(

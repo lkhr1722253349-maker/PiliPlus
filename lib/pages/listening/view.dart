@@ -796,7 +796,7 @@ class _ListeningPageState extends State<ListeningPage> {
               }
             }),
             itemBuilder: (_) => [
-              const PopupMenuItem(value: 'lyrics', child: Text('查看歌词 / 字幕')),
+              const PopupMenuItem(value: 'lyrics', child: Text('歌词设置')),
               const PopupMenuItem(value: 'tags', child: Text('使用歌曲标签命名')),
               const PopupMenuItem(value: 'replace', child: Text('搜索换源并同步收藏')),
               const PopupMenuItem(value: 'rename', child: Text('修改歌曲名称')),

@@ -95,6 +95,7 @@ void main() {
         source: 'test',
         lines: [LyricLine(Duration.zero, 'synthetic')],
         priority: 0,
+        confirmed: true,
       );
       const translated = LyricTrack(
         label: 'translated',
@@ -121,6 +122,24 @@ void main() {
         second.saved(song, translation: true)?.original?.lines.single.text,
         'synthetic',
       );
+      const subtitle = LyricTrack(
+        label: 'old subtitle',
+        source: 'video',
+        lines: [],
+      );
+      await second.save(song, subtitle);
+      expect(second.saved(song), isNull);
+      await second.save(
+        song,
+        const LyricTrack(
+          label: 'old subtitle translation',
+          source: 'video',
+          lines: [],
+          priority: 1,
+          original: subtitle,
+        ),
+      );
+      expect(second.saved(song, translation: true), isNull);
       second.close();
       await Hive.close();
       await directory.delete(recursive: true);

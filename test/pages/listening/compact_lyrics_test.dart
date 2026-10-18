@@ -35,7 +35,7 @@ void main() {
       expect(find.text('current'), findsOneWidget);
       expect(find.text('next'), findsOneWidget);
       expect(find.text('later'), findsNothing);
-      expect(find.byType(ImageFiltered), findsNWidgets(2));
+      expect(find.byType(ImageFiltered), findsNothing);
       final center = tester.getCenter(find.text('current')).dx;
       expect(
         center,
@@ -46,6 +46,12 @@ void main() {
       controller.position.value = const Duration(milliseconds: 2500);
       await tester.pump();
       expect(find.text('later'), findsOneWidget);
+      final startY = tester.getCenter(find.text('later')).dy;
+      await tester.pump(const Duration(milliseconds: 190));
+      final halfwayY = tester.getCenter(find.text('later')).dy;
+      expect(halfwayY, lessThan(startY));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(find.text('later')).dy, lessThan(halfwayY));
       expect(find.text('previous'), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
