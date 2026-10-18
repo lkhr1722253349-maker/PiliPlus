@@ -287,17 +287,14 @@ class ListeningController extends GetxController {
   void _bindSession() {
     _ownsMediaSession = true;
     pauseListening = _yieldPlayback;
-    videoPlayerServiceHandler
-      ?..onPlay = resume
-      ..onPause = pause
-      ..onSeek = seek
-      ..onListeningMode = cycleMode
-      ..onSkipToNext = () {
-        unawaited(next());
-      }
-      ..onSkipToPrevious = () {
-        unawaited(next(previous: true));
-      };
+    videoPlayerServiceHandler?.bindListeningSession(
+      play: resume,
+      pause: pause,
+      seek: seek,
+      mode: cycleMode,
+      next: () => next(),
+      previous: () => next(previous: true),
+    );
     videoPlayerServiceHandler?.updateListeningMode(mode.value.name);
     shutdownTimerService
       ..onPause = () {
@@ -312,15 +309,7 @@ class ListeningController extends GetxController {
     await pause();
     _ownsMediaSession = false;
     pauseListening = null;
-    if (videoPlayerServiceHandler?.onPlay == resume) {
-      videoPlayerServiceHandler
-        ?..onPlay = null
-        ..onPause = null
-        ..onSeek = null
-        ..onSkipToNext = null
-        ..onSkipToPrevious = null
-        ..clearListeningMediaItem();
-    }
+    videoPlayerServiceHandler?.clearListeningMediaItem();
     if (shutdownTimerService.isPlaying == _isPlaying) {
       shutdownTimerService
         ..onPause = null
@@ -336,6 +325,7 @@ class ListeningController extends GetxController {
       false,
       position: position.value,
       speed: speed.value,
+      listening: true,
     );
   }
 

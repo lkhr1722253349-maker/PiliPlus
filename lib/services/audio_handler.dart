@@ -60,6 +60,27 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
   void Function()? onListeningMode;
   String listeningMode = 'list';
   bool _listening = false;
+  Future<void> Function()? _listeningPlay,
+      _listeningPause,
+      _listeningNext,
+      _listeningPrevious;
+  Future<void> Function(Duration)? _listeningSeek;
+
+  void bindListeningSession({
+    required Future<void> Function() play,
+    required Future<void> Function() pause,
+    required Future<void> Function() next,
+    required Future<void> Function() previous,
+    required Future<void> Function(Duration) seek,
+    required void Function() mode,
+  }) {
+    _listeningPlay = play;
+    _listeningPause = pause;
+    _listeningNext = next;
+    _listeningPrevious = previous;
+    _listeningSeek = seek;
+    onListeningMode = mode;
+  }
 
   void updateListeningMode(String mode) {
     listeningMode = mode;
@@ -76,6 +97,7 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> play() {
+    if (_listening) return _listeningPlay?.call() ?? Future.value();
     return onPlay?.call() ??
         PlPlayerController.playIfExists() ??
         Future.syncValue(null);
@@ -83,6 +105,7 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> pause() {
+    if (_listening) return _listeningPause?.call() ?? Future.value();
     return onPause?.call() ??
         PlPlayerController.pauseIfExists() ??
         Future.syncValue(null);
@@ -108,24 +131,34 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToNext() {
+    if (_listening) return _listeningNext?.call() ?? Future.value();
     final func = onSkipToNext ?? _findIntroController()?.nextPlay;
     return func == null ? Future.syncValue(null) : Future.sync(func);
   }
 
   @override
   Future<void> skipToPrevious() {
+    if (_listening) return _listeningPrevious?.call() ?? Future.value();
     final func = onSkipToPrevious ?? _findIntroController()?.prevPlay;
     return func == null ? Future.syncValue(null) : Future.sync(func);
   }
 
   @override
+  Future<void> fastForward() => _listening ? skipToNext() : super.fastForward();
+
+  @override
+  Future<void> rewind() => _listening ? skipToPrevious() : super.rewind();
+
+  @override
   Future<void> seek(Duration position) {
+    if (_listening) return _listeningSeek?.call(position) ?? Future.value();
     return onSeek?.call(position) ??
         PlPlayerController.seekToIfExists(position, isSeek: false) ??
         Future.syncValue(null);
   }
 
   void setMediaItem(MediaItem newMediaItem) {
+    if (_listening && !newMediaItem.id.startsWith('listening:')) return;
     if (!enableBackgroundPlay) return;
     // if (kDebugMode) {
     //   debugPrint("此时调用栈为：");
@@ -146,6 +179,9 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
 
   void clearListeningMediaItem() {
     _listening = false;
+    _listeningPlay = _listeningPause = _listeningNext = _listeningPrevious =
+        null;
+    _listeningSeek = null;
     onListeningMode = null;
     _lastConfig = null;
     _item.removeWhere((e) => e.id.startsWith('listening:'));
@@ -161,7 +197,9 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
     required Duration position,
     required double speed,
     String? debugLabel,
+    bool listening = false,
   }) {
+    if (_listening && !listening) return;
     if (!enableBackgroundPlay || _item.isEmpty) {
       return;
     }
@@ -383,6 +421,7 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
     if (_item.isNotEmpty) {
       _item.removeWhere((item) => item.id.endsWith(herotag));
     }
+    if (_listening) return;
     if (_item.isNotEmpty) {
       setMediaItem(_item.last);
       playbackState.add(
@@ -397,6 +436,7 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
   }
 
   void clear() {
+    if (_listening) return;
     if (!enableBackgroundPlay) return;
     mediaItem.add(null);
     _item.clear();

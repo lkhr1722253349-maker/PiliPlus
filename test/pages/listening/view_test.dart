@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:PiliPlus/common/widgets/main_layout.dart';
 import 'package:PiliPlus/pages/listening/controller.dart';
 import 'package:PiliPlus/pages/listening/models.dart';
 import 'package:PiliPlus/pages/listening/view.dart';
@@ -33,6 +34,48 @@ void main() {
     await Hive.close();
     await directory.delete(recursive: true);
   });
+
+  testWidgets(
+    'embedded phone page stays above bottom navigation and has one top inset',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      Get.put<ListeningController>(_UiController(), permanent: true);
+      await tester.pumpWidget(
+        const GetMaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(
+              size: Size(360, 640),
+              padding: EdgeInsets.only(top: 24),
+            ),
+            child: MainLayout(
+              sideBar: null,
+              bottomNav: SizedBox(
+                height: 80,
+                child: ColoredBox(color: Colors.red),
+              ),
+              resizeBodyForBottomNav: true,
+              body: Padding(
+                padding: EdgeInsets.only(top: 24),
+                child: ListeningPage(embedded: true),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(find.byType(AppBar)).dy, 24);
+      expect(tester.getSize(find.byType(AppBar)).height, kToolbarHeight);
+      expect(tester.getBottomRight(find.text('收起列表')).dy, lessThan(560));
+      await tester.tap(find.text('收起列表'));
+      await tester.pumpAndSettle();
+      expect(find.text('展开列表'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   for (final size in [const Size(360, 640), const Size(1000, 500)]) {
     testWidgets('listening page fits $size and creates a playlist', (

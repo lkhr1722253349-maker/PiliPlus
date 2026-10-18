@@ -29,7 +29,7 @@ enum NavigationBarType implements EnumWithLabel {
     '播放',
     Icon(Icons.headphones_outlined),
     Icon(Icons.headphones),
-    ListeningPage(),
+    ListeningPage(embedded: true),
   ),
   ;
 

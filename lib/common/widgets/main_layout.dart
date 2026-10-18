@@ -11,11 +11,13 @@ class MainLayout
     required this.sideBar,
     required this.bottomNav,
     required this.body,
+    this.resizeBodyForBottomNav = false,
   });
 
   final Widget? sideBar;
   final Widget? bottomNav;
   final Widget body;
+  final bool resizeBodyForBottomNav;
 
   @override
   Iterable<MainType> get slots => MainType.values;
@@ -31,7 +33,15 @@ class MainLayout
   SlottedContainerRenderObjectMixin<MainType, RenderBox> createRenderObject(
     BuildContext context,
   ) {
-    return _RenderMainLayout();
+    return _RenderMainLayout()..resizeBodyForBottomNav = resizeBodyForBottomNav;
+  }
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderMainLayout renderObject,
+  ) {
+    renderObject.resizeBodyForBottomNav = resizeBodyForBottomNav;
   }
 }
 
@@ -39,6 +49,13 @@ class _RenderMainLayout extends RenderBox
     with
         SlottedContainerRenderObjectMixin<MainType, RenderBox>,
         SlottedLayoutMixin {
+  bool _resizeBodyForBottomNav = false;
+  set resizeBodyForBottomNav(bool value) {
+    if (_resizeBodyForBottomNav == value) return;
+    _resizeBodyForBottomNav = value;
+    markNeedsLayout();
+  }
+
   RenderBox? get sideBar => childForSlot(.sideBar);
   RenderBox? get bottomNav => childForSlot(.bottomNav);
   RenderBox get body => childForSlot(.body)!;
@@ -69,11 +86,13 @@ class _RenderMainLayout extends RenderBox
       );
     } else {
       final bottomNav = this.bottomNav;
+      double bottomHeight = 0;
       if (bottomNav != null) {
         final bottomNavSize = ChildLayoutHelper.layoutChild(
           bottomNav,
           constraints.loosen(),
         );
+        bottomHeight = bottomNavSize.height;
         setOffset(
           bottomNav,
           Offset(
@@ -86,7 +105,9 @@ class _RenderMainLayout extends RenderBox
       bodyOffset = .zero;
       bodyConstraints = BoxConstraints.tightFor(
         width: constraints.maxWidth,
-        height: constraints.maxHeight,
+        height:
+            constraints.maxHeight -
+            (_resizeBodyForBottomNav ? bottomHeight : 0),
       );
     }
 

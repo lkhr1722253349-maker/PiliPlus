@@ -17,7 +17,8 @@ import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
 
 class ListeningPage extends StatefulWidget {
-  const ListeningPage({super.key});
+  const ListeningPage({super.key, this.embedded = false});
+  final bool embedded;
   @override
   State<ListeningPage> createState() => _ListeningPageState();
 }
@@ -779,7 +780,9 @@ class _ListeningPageState extends State<ListeningPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    primary: !widget.embedded,
     appBar: AppBar(
+      primary: !widget.embedded,
       automaticallyImplyLeading: false,
       titleSpacing: 4,
       title: _playlistSelector(),
@@ -808,6 +811,7 @@ class _ListeningPageState extends State<ListeningPage> {
     ),
     body: SafeArea(
       top: false,
+      bottom: !widget.embedded,
       child: Column(
         children: [
           if (_busy) const LinearProgressIndicator(),

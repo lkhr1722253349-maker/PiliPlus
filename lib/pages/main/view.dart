@@ -348,11 +348,19 @@ class _MainAppState extends PopScopeState<MainApp>
       padding = .only(top: _padding.top, right: _padding.right);
     }
 
+    final pageBody = Padding(padding: padding, child: child);
     child = Material(
-      child: MainLayout(
-        sideBar: sideBar,
-        bottomNav: bottomNav,
-        body: Padding(padding: padding, child: child),
+      child: Obx(
+        () => MainLayout(
+          sideBar: sideBar,
+          bottomNav: bottomNav,
+          body: pageBody,
+          resizeBodyForBottomNav:
+              _mainController.navigationBars[_mainController
+                  .selectedIndex
+                  .value] ==
+              NavigationBarType.listening,
+        ),
       ),
     );
 

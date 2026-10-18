@@ -22,7 +22,17 @@ void main() {
         const MediaItem(id: 'listening:test', title: 'song'),
       );
       var changes = 0;
-      handler.onListeningMode = () => changes++;
+      final calls = <String>[];
+      handler.bindListeningSession(
+        play: () async => calls.add('play'),
+        pause: () async => calls.add('pause'),
+        next: () async => calls.add('next'),
+        previous: () async => calls.add('previous'),
+        seek: (_) async => calls.add('seek'),
+        mode: () => changes++,
+      );
+      handler.onPlay = () async => calls.add('wrong player');
+      handler.onSkipToNext = () => calls.add('wrong next');
       handler.updateListeningMode('shuffle');
       handler.onUpdateState(
         PlayerStatus.playing,
@@ -30,6 +40,7 @@ void main() {
         false,
         position: Duration.zero,
         speed: 1,
+        listening: true,
       );
       final state = handler.playbackState.value;
       expect(state.controls.map((e) => e.label), [
@@ -40,6 +51,32 @@ void main() {
       ]);
       expect(state.shuffleMode, AudioServiceShuffleMode.all);
       expect(state.androidCompactActionIndices, [0, 1, 2]);
+      await handler.play();
+      await handler.pause();
+      await handler.skipToNext();
+      await handler.skipToPrevious();
+      await handler.seek(const Duration(seconds: 3));
+      await handler.fastForward();
+      await handler.rewind();
+      expect(calls, [
+        'play',
+        'pause',
+        'next',
+        'previous',
+        'seek',
+        'next',
+        'previous',
+      ]);
+      handler.onUpdateState(
+        PlayerStatus.paused,
+        false,
+        false,
+        position: Duration.zero,
+        speed: 1,
+      );
+      handler.clear();
+      expect(handler.playbackState.value.playing, isTrue);
+      expect(handler.mediaItem.value?.id, 'listening:test');
       await handler.customAction('listeningMode');
       expect(changes, 1);
       handler.clearListeningMediaItem();
