@@ -26,6 +26,7 @@ import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:PiliPlus/utils/video_utils.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 import 'package:media_kit/media_kit.dart';
@@ -34,6 +35,9 @@ enum ListeningMode { list, shuffle, single }
 
 class ListeningController extends GetxController {
   static const storageKey = 'listeningPlaylistsV1';
+  static const _networkChannel = MethodChannel(
+    'com.example.piliplus/listening_network',
+  );
   final playlists = <ListeningPlaylist>[].obs;
   final selectedId = ''.obs;
   final focusRequest = 0.obs;
@@ -65,11 +69,26 @@ class ListeningController extends GetxController {
   StreamSubscription<List<ConnectivityResult>>? _networkSubscription;
   Future<void> _watchNetwork() async {
     if (_networkSubscription != null) return;
-    void update(List<ConnectivityResult> networks) {
-      isMobileNetwork.value =
+    var networkUpdate = 0;
+    Future<void> update(List<ConnectivityResult> networks) async {
+      final updateId = ++networkUpdate;
+      final mobileOnly =
           networks.contains(ConnectivityResult.mobile) &&
           !networks.contains(ConnectivityResult.wifi) &&
           !networks.contains(ConnectivityResult.ethernet);
+      var meteredWifi = false;
+      if (Platform.isAndroid && networks.contains(ConnectivityResult.wifi)) {
+        try {
+          meteredWifi =
+              await _networkChannel.invokeMethod<bool>('isMeteredWifi') ??
+              false;
+        } on PlatformException catch (_) {
+          meteredWifi = false;
+        }
+      }
+      if (updateId == networkUpdate) {
+        isMobileNetwork.value = mobileOnly || meteredWifi;
+      }
     }
 
     try {
@@ -125,16 +144,25 @@ class ListeningController extends GetxController {
   }
 
   bool _translatingNames = false;
+  bool _translationPending = false;
   Future<void> translateSongNames() async {
-    if (_translatingNames) return;
+    if (_translatingNames) {
+      _translationPending = true;
+      return;
+    }
     _translatingNames = true;
     final service = ListeningLyrics();
     try {
       for (final list in playlists.toList()) {
         for (final song in list.songs.toList()) {
           final name = song.name;
-          final language = ListeningLyrics.nameLanguage(name);
-          if (language == null || song.translatedNameSource == name) continue;
+          final language =
+              ListeningLyrics.nameLanguage(
+                name,
+                context: '${song.source.title} ${song.original.title}',
+              ) ??
+              'autodetect';
+          if (song.translatedNameSource == name) continue;
           try {
             final translated = await service.translateLine(name, language);
             if (song.name != name || !list.songs.contains(song)) continue;
@@ -145,14 +173,19 @@ class ListeningController extends GetxController {
                 ? translated
                 : null;
             await save();
-          } catch (_) {
-            return;
-          } // Do not exhaust quota with more failed requests.
+          } catch (error) {
+            if ('$error'.contains('额度不足') || '$error'.contains('429')) break;
+            continue;
+          }
         }
       }
     } finally {
       service.close();
       _translatingNames = false;
+      if (_translationPending) {
+        _translationPending = false;
+        unawaited(translateSongNames());
+      }
     }
   }
 

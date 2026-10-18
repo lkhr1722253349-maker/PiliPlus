@@ -580,9 +580,13 @@ class ListeningLyrics {
       sha256.convert(utf8.encode(text)).toString();
   static String sourceKey(ListeningSong song) =>
       key('${song.source.key}:${song.name}');
-  static String? nameLanguage(String name) {
+  static String? nameLanguage(String name, {String context = ''}) {
     if (RegExp(r'[\u3040-\u30ff]').hasMatch(name)) return 'ja';
     if (RegExp(r'[\uac00-\ud7af]').hasMatch(name)) return 'ko';
+    // Kanji-only Japanese titles need language context from the source video.
+    if (RegExp(r'[\u3400-\u9fff]').hasMatch(name) &&
+        RegExp(r'[\u3040-\u30ff]').hasMatch(context))
+      return 'ja';
     if (!RegExp(r'[\u3400-\u9fff]').hasMatch(name) &&
         RegExp('[a-zA-Z]').hasMatch(name))
       return 'en';

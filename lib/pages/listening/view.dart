@@ -499,6 +499,7 @@ class _ListeningPageState extends State<ListeningPage> {
         song.nameEdited = true;
         song.namedSource = song.source.key;
         await controller.save();
+        unawaited(controller.translateSongNames());
       }
     } else {
       throw StateError('读取视频标签失败，请稍后重试');
@@ -747,6 +748,7 @@ class _ListeningPageState extends State<ListeningPage> {
                     song.name = name;
                     song.nameEdited = true;
                     await controller.save();
+                    unawaited(controller.translateSongNames());
                   }
                 case 'delete':
                   await controller.removeSong(list, song);
