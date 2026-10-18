@@ -59,6 +59,31 @@ String? songTagName(List<VideoTagItem> tags, String title) {
 }
 
 class ListeningMetadata {
+  Future<List<String>> lyricSearchTags(SongSource source) async {
+    final result = await UserHttp.videoTags(bvid: source.bvid, cid: source.cid);
+    if (result case Success(:final response)) {
+      final tags = response ?? <VideoTagItem>[];
+      final values = <String>{};
+      for (final tag in tags) {
+        final name = tag.tagName?.replaceFirst(RegExp(r'^发现'), '').trim();
+        if (name == null || name.length < 2) continue;
+        if (tag.tagType == 'bgm') values.add(name);
+        if (tag.musicId != null) {
+          try {
+            final detail = await MusicHttp.bgmDetail(tag.musicId!);
+            if (detail case Success(:final response)) {
+              if (response.musicTitle?.trim().isNotEmpty == true) {
+                values.add(response.musicTitle!.trim());
+              }
+            }
+          } catch (_) {}
+        }
+      }
+      return values.take(3).toList();
+    }
+    return [];
+  }
+
   Future<String?> name(SongSource source) async {
     final result = await UserHttp.videoTags(bvid: source.bvid, cid: source.cid);
     if (result case Success(:final response)) {
@@ -204,7 +229,42 @@ class LyricsSearch {
       },
     ),
   );
-  Future<List<LyricCandidate>> search(String name) async {
+  Future<List<LyricCandidate>> search(
+    String name, {
+    Iterable<String> hints = const [],
+  }) async {
+    final candidates = <LyricCandidate>[];
+    final seen = <String>{};
+    for (final term in [
+      name,
+      ...hints,
+    ].where((e) => e.trim().isNotEmpty).take(4)) {
+      candidates.addAll(
+        await _searchMusic(term).then(
+          (items) => items
+              .where(
+                (e) => seen.add(
+                  '${e.title.toLowerCase()}|${e.artist.toLowerCase()}|${e.duration}|${e.lrc.hashCode}',
+                ),
+              )
+              .toList(),
+        ),
+      );
+    }
+    if (candidates.isNotEmpty) return candidates;
+    final result = await _client.get(
+      '/api/search',
+      queryParameters: {'q': name},
+    );
+    return (result.data as List)
+        .whereType<Map>()
+        .map(LyricCandidate.new)
+        .where((e) => e.lrc.isNotEmpty || e.plain.isNotEmpty)
+        .take(30)
+        .toList();
+  }
+
+  Future<List<LyricCandidate>> _searchMusic(String name) async {
     try {
       final response = await _music.get(
         '/api/search/get',
@@ -245,24 +305,89 @@ class LyricsSearch {
       final available = found.whereType<LyricCandidate>().toList();
       if (available.isNotEmpty) return available;
     } catch (_) {
-      /* Try the independent lyrics database below. */
+      /* Search the next query hint. */
     }
-    final result = await _client.get(
-      '/api/search',
-      queryParameters: {'q': name},
-    );
-    return (result.data as List)
-        .whereType<Map>()
-        .map(LyricCandidate.new)
-        .where((e) => e.lrc.isNotEmpty || e.plain.isNotEmpty)
-        .take(30)
-        .toList();
+    return [];
   }
 
   void close() {
     _music.close(force: true);
     _client.close(force: true);
   }
+}
+
+class EncyclopediaLyricsSearch {
+  final Dio client;
+  EncyclopediaLyricsSearch({Dio? client})
+    : client =
+          client ??
+          Dio(
+            BaseOptions(
+              connectTimeout: const Duration(seconds: 6),
+              receiveTimeout: const Duration(seconds: 8),
+              headers: {
+                'User-Agent': 'PiliPlus-custom/1.0 (https://github.com/lkhr1722253349-maker/PiliPlus)',
+              },
+            ),
+          );
+
+  Future<List<String>> hints(String song, Iterable<String> tags) async {
+    final tagList = tags.take(2).toList();
+    final query = tagList.isEmpty ? song : '$song ${tagList.join(' ')}';
+    final output = <String>{};
+    await Future.wait<void>(
+      [
+        ...['ja', 'zh', 'en'].map((language) async {
+          try {
+            final result = await client.get(
+              'https://$language.wikipedia.org/w/api.php',
+              queryParameters: {
+                'action': 'query',
+                'list': 'search',
+                'srsearch': query,
+                'srlimit': 3,
+                'format': 'json',
+              },
+            );
+            final pages = result.data['query']?['search'] as List? ?? [];
+            for (final page in pages.whereType<Map>()) {
+              final title = (page['title'] as String? ?? '').trim();
+              if (title.isNotEmpty && title.toLowerCase() != song.toLowerCase())
+                output.add(title);
+            }
+          } catch (_) {}
+        }),
+        (() async {
+          try {
+            final result = await client.get(
+              'https://www.wikidata.org/w/api.php',
+              queryParameters: {
+                'action': 'wbsearchentities',
+                'search': query,
+                'language': 'ja',
+                'uselang': 'ja',
+                'format': 'json',
+                'limit': 4,
+              },
+            );
+            for (final entity
+                in (result.data['search'] as List? ?? []).whereType<Map>()) {
+              final label = (entity['label'] as String? ?? '').trim();
+              final description = (entity['description'] as String? ?? '')
+                  .trim();
+              if (label.isNotEmpty && label.toLowerCase() != song.toLowerCase())
+                output.add(label);
+              if (description.length > 3 && description.length < 80)
+                output.add(description);
+            }
+          } catch (_) {}
+        })(),
+      ],
+    );
+    return output.take(3).toList();
+  }
+
+  void close() => client.close(force: true);
 }
 
 /// A title alone cannot distinguish unrelated songs with the same name.
@@ -472,12 +597,30 @@ class ListeningLyrics {
     final original = saved(song);
     if (original?.priority == 0 && original!.confirmed) return original;
     try {
-      final candidates = await search.search(song.name);
-      final candidate = selectSongLyrics(
+      var candidates = await search.search(song.name);
+      var candidate = selectSongLyrics(
         song,
         candidates,
         duration: currentDuration?.call() ?? duration,
       );
+      if (candidate == null) {
+        final tags = await ListeningMetadata().lyricSearchTags(song.original);
+        final encyclopedia = EncyclopediaLyricsSearch();
+        try {
+          final articleHints = await encyclopedia.hints(song.name, tags);
+          candidates = await search.search(
+            song.name,
+            hints: [...tags, ...articleHints],
+          );
+          candidate = selectSongLyrics(
+            song,
+            candidates,
+            duration: currentDuration?.call() ?? duration,
+          );
+        } finally {
+          encyclopedia.close();
+        }
+      }
       if (candidate != null) {
         final track = LyricTrack(
           label: '歌曲歌词 · ${candidate.artist}',
