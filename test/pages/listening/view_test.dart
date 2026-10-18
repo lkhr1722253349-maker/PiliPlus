@@ -86,7 +86,17 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       Get.put<ListeningController>(_UiController(), permanent: true);
-      await tester.pumpWidget(const GetMaterialApp(home: ListeningPage()));
+      await tester.pumpWidget(
+        GetMaterialApp(
+          home: const ListeningPage(),
+          getPages: [
+            GetPage(
+              name: '/videoV',
+              page: () => const Scaffold(body: Text('原视频已打开')),
+            ),
+          ],
+        ),
+      );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(find.text('听视频歌单'), findsNothing);
@@ -179,6 +189,29 @@ void main() {
       expect(player.selected.id, playingList.id);
       expect(find.widgetWithText(ListTile, '曲目 90'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      playingList.songs[90].replace(
+        const SongSource(
+          bvid: 'replacement',
+          aid: 999,
+          cid: 999,
+          page: 2,
+          title: '替代源',
+        ),
+      );
+      await tester.tap(
+        find.descendant(
+          of: find.widgetWithText(ListTile, '曲目 90'),
+          matching: find.byType(PopupMenuButton<String>),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('查看原视频'));
+      await tester.pumpAndSettle();
+      expect(find.text('原视频已打开'), findsOneWidget);
+      expect(Get.arguments['bvid'], 'bv90');
+      expect(Get.arguments['cid'], 91);
+      Get.back<void>();
+      await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 1));
     });

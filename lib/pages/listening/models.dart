@@ -37,6 +37,8 @@ class SongSource {
 class ListeningSong {
   final String id;
   String name;
+  bool nameEdited;
+  String? namedSource;
   final SongSource original;
   SongSource source;
   final List<SongSource> previousSources;
@@ -48,6 +50,8 @@ class ListeningSong {
   ListeningSong({
     required this.id,
     required this.name,
+    this.nameEdited = false,
+    this.namedSource,
     required this.original,
     SongSource? source,
     List<SongSource>? previousSources,
@@ -68,6 +72,9 @@ class ListeningSong {
   factory ListeningSong.fromJson(Map json) => ListeningSong(
     id: json['id'],
     name: json['name'],
+    nameEdited:
+        json['nameEdited'] ?? (json['name'] != json['original']['title']),
+    namedSource: json['namedSource'],
     original: SongSource.fromJson(json['original']),
     source: SongSource.fromJson(json['source']),
     previousSources: (json['previousSources'] as List? ?? [])
@@ -81,6 +88,8 @@ class ListeningSong {
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
+    'nameEdited': nameEdited,
+    'namedSource': namedSource,
     'original': original.toJson(),
     'source': source.toJson(),
     'previousSources': previousSources.map((e) => e.toJson()).toList(),

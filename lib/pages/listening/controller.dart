@@ -13,6 +13,7 @@ import 'package:PiliPlus/models/search/result.dart';
 import 'package:PiliPlus/models_new/fav/fav_folder/list.dart';
 import 'package:PiliPlus/models_new/video/video_detail/data.dart';
 import 'package:PiliPlus/pages/listening/models.dart';
+import 'package:PiliPlus/pages/listening/lyrics.dart';
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/services/service_locator.dart';
@@ -50,6 +51,45 @@ class ListeningController extends GetxController {
   void Function(ListeningSong song)? onUnavailable;
   String? _notifiedFailure;
   int _streamRetries = 0;
+  bool _naming = false;
+  bool _namingPending = false;
+  Future<void> refreshSongNames() async {
+    if (_naming) {
+      _namingPending = true;
+      return;
+    }
+    _naming = true;
+    try {
+      for (final list in playlists.toList()) {
+        for (final song in list.songs.toList()) {
+          if (song.nameEdited ||
+              song.namedSource == song.source.key ||
+              song.source.cid == 0)
+            continue;
+          final source = song.source;
+          try {
+            final name = await ListeningMetadata().name(source);
+            if (song.nameEdited ||
+                song.source.key != source.key ||
+                !list.songs.contains(song))
+              continue;
+            if (name != null) song.name = name;
+            song.namedSource = source.key;
+            await save();
+          } catch (_) {
+            /* Retry metadata later; playback remains available. */
+          }
+        }
+      }
+    } finally {
+      _naming = false;
+      if (_namingPending) {
+        _namingPending = false;
+        unawaited(refreshSongNames());
+      }
+    }
+  }
+
   String? _openError;
 
   ListeningPlaylist get selected =>
@@ -77,6 +117,16 @@ class ListeningController extends GetxController {
     );
     playlists.refresh();
     current.refresh();
+    final song = current.value;
+    final item = videoPlayerServiceHandler?.mediaItem.value;
+    if (_ownsMediaSession &&
+        song != null &&
+        item?.id == 'listening:${song.id}' &&
+        item!.title != song.name) {
+      videoPlayerServiceHandler?.setListeningMediaItem(
+        item.copyWith(title: song.name),
+      );
+    }
   }
 
   Future<void> createPlaylist(String name) async {

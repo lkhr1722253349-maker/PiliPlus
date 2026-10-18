@@ -2,15 +2,18 @@ import 'dart:async';
 
 import 'package:PiliPlus/http/fav.dart';
 import 'package:PiliPlus/http/loading_state.dart';
+import 'package:PiliPlus/http/user.dart';
 import 'package:PiliPlus/models/search/result.dart';
 import 'package:PiliPlus/models_new/video/video_detail/data.dart';
 import 'package:PiliPlus/models_new/video/video_detail/page.dart';
 import 'package:PiliPlus/pages/listening/controller.dart';
 import 'package:PiliPlus/pages/listening/favorite_link.dart';
 import 'package:PiliPlus/pages/listening/models.dart';
+import 'package:PiliPlus/pages/listening/lyrics_view.dart';
 import 'package:PiliPlus/services/shutdown_timer_service.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/id_utils.dart';
+import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:PiliPlus/utils/url_utils.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
@@ -42,6 +45,7 @@ class _ListeningPageState extends State<ListeningPage> {
     controller.onUnavailable = _onUnavailable;
     _focusWorker = ever(controller.focusRequest, (_) => _focusPlayingSong());
     controller.focusCurrentSong();
+    unawaited(controller.refreshSongNames());
   }
 
   void _focusPlayingSong() {
@@ -276,6 +280,7 @@ class _ListeningPageState extends State<ListeningPage> {
       );
     }
     await controller.save();
+    unawaited(controller.refreshSongNames());
   }
 
   Future<void> _addVideoLink() async {
@@ -456,6 +461,47 @@ class _ListeningPageState extends State<ListeningPage> {
     await controller.play(list, song);
   }
 
+  Future<void> _chooseSongTag(ListeningSong song) async {
+    final result = await UserHttp.videoTags(
+      bvid: song.source.bvid,
+      cid: song.source.cid,
+    );
+    if (!mounted) return;
+    if (result case Success(:final response)) {
+      final names = (response ?? [])
+          .map((e) => e.tagName?.replaceFirst(RegExp(r'^发现'), '').trim() ?? '')
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList();
+      if (names.isEmpty) {
+        SmartDialog.showToast('这个视频没有可用标签，可手动修改歌名');
+        return;
+      }
+      final name = await showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('从视频标签选择歌名'),
+          children: names
+              .map(
+                (e) => SimpleDialogOption(
+                  onPressed: () => Navigator.pop(context, e),
+                  child: Text(e),
+                ),
+              )
+              .toList(),
+        ),
+      );
+      if (name != null) {
+        song.name = name;
+        song.nameEdited = true;
+        song.namedSource = song.source.key;
+        await controller.save();
+      }
+    } else {
+      throw StateError('读取视频标签失败，请稍后重试');
+    }
+  }
+
   String _time(Duration duration) =>
       '${duration.inMinutes}:${(duration.inSeconds % 60).toString().padLeft(2, '0')}';
 
@@ -546,11 +592,35 @@ class _ListeningPageState extends State<ListeningPage> {
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    song?.name ?? '尚未选择歌曲',
-                    style: Theme.of(context).textTheme.titleMedium,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  child: InkWell(
+                    onTap: song == null
+                        ? null
+                        : () => Get.to(
+                            () => ListeningLyricsView(
+                              song: song,
+                              controller: controller,
+                            ),
+                          ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              song?.name ?? '尚未选择歌曲',
+                              style: Theme.of(context).textTheme.titleMedium,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (song != null)
+                            const Padding(
+                              padding: EdgeInsets.only(left: 4),
+                              child: Icon(Icons.lyrics_outlined, size: 20),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
                 if (song?.error != null)
@@ -626,6 +696,13 @@ class _ListeningPageState extends State<ListeningPage> {
               switch (action) {
                 case 'replace':
                   await _replace(song);
+                case 'tags':
+                  await _chooseSongTag(song);
+                case 'lyrics':
+                  await Get.to(
+                    () =>
+                        ListeningLyricsView(song: song, controller: controller),
+                  );
                 case 'rename':
                   final name = await _text(
                     '修改歌曲名称（用于换源搜索）',
@@ -633,6 +710,7 @@ class _ListeningPageState extends State<ListeningPage> {
                   );
                   if (name != null) {
                     song.name = name;
+                    song.nameEdited = true;
                     await controller.save();
                   }
                 case 'delete':
@@ -663,26 +741,28 @@ class _ListeningPageState extends State<ListeningPage> {
                   await controller.retryFavoriteSync(song);
                 case 'original':
                   if (!mounted) return;
-                  await showDialog<void>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('保留的原视频'),
-                      content: SelectableText(
-                        '${song.original.title}\n${song.original.bvid} · P${song.original.page}\n'
-                        'https://www.bilibili.com/video/${song.original.bvid}?p=${song.original.page}\n\n'
-                        '换源记录：${song.previousSources.length} 次',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('关闭'),
-                        ),
-                      ],
-                    ),
+                  var source = song.original;
+                  if (source.cid == 0) {
+                    final video = await controller.detail(source.bvid);
+                    final parts = video.pages ?? [];
+                    final part = parts
+                        .where((e) => e.page == source.page)
+                        .firstOrNull;
+                    if (part?.cid == null) throw StateError('原视频已失效或原分 P 不可用');
+                    source = _source(video, part!);
+                  }
+                  await PageUtils.toVideoPage(
+                    aid: source.aid,
+                    bvid: source.bvid,
+                    cid: source.cid,
+                    title: source.title,
+                    cover: source.cover,
                   );
               }
             }),
             itemBuilder: (_) => [
+              const PopupMenuItem(value: 'lyrics', child: Text('查看歌词 / 字幕')),
+              const PopupMenuItem(value: 'tags', child: Text('使用歌曲标签命名')),
               const PopupMenuItem(value: 'replace', child: Text('搜索换源并同步收藏')),
               const PopupMenuItem(value: 'rename', child: Text('修改歌曲名称')),
               const PopupMenuItem(value: 'original', child: Text('查看原视频')),
