@@ -13,6 +13,7 @@ import 'package:PiliPlus/models/search/result.dart';
 import 'package:PiliPlus/models_new/fav/fav_folder/list.dart';
 import 'package:PiliPlus/models_new/video/video_detail/data.dart';
 import 'package:PiliPlus/pages/listening/models.dart';
+import 'package:PiliPlus/pages/listening/song_name.dart';
 import 'package:PiliPlus/pages/listening/lyrics.dart';
 import 'package:PiliPlus/pages/listening/audio_proxy.dart';
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
@@ -366,6 +367,23 @@ class ListeningController extends GetxController {
     );
     if (result case Success(:final response)) return response.list ?? [];
     throw StateError(result.toString());
+  }
+
+  Future<bool> applySearchSongName(
+    ListeningSong song,
+    String sourceKey,
+    SongNameConsensus consensus,
+  ) async {
+    if (song.nameEdited ||
+        song.source.key != sourceKey ||
+        !playlists.any((list) => list.songs.contains(song)))
+      return false;
+    if (song.name == consensus.name) return true;
+    song.name = consensus.name;
+    song.namedSource = sourceKey;
+    await save();
+    unawaited(translateSongNames());
+    return true;
   }
 
   Future<Player> _ensurePlayer() async {

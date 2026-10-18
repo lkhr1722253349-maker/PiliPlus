@@ -9,6 +9,7 @@ import 'package:PiliPlus/models_new/video/video_detail/page.dart';
 import 'package:PiliPlus/pages/listening/controller.dart';
 import 'package:PiliPlus/pages/listening/favorite_link.dart';
 import 'package:PiliPlus/pages/listening/models.dart';
+import 'package:PiliPlus/pages/listening/song_name.dart';
 import 'package:PiliPlus/pages/listening/lyrics_view.dart';
 import 'package:PiliPlus/pages/listening/compact_lyrics.dart';
 import 'package:PiliPlus/pages/listening/audio_proxy.dart';
@@ -428,7 +429,7 @@ class _ListeningPageState extends State<ListeningPage> {
   Future<void> _replace(ListeningSong song) async {
     final candidate = await showDialog<SearchVideoItemModel>(
       context: context,
-      builder: (_) => _SourceSearch(controller: controller, keyword: song.name),
+      builder: (_) => _SourceSearch(controller: controller, song: song),
     );
     if (candidate?.bvid == null || !mounted) return;
     final detail = await controller.detail(candidate!.bvid!);
@@ -979,14 +980,17 @@ class _ListeningPageState extends State<ListeningPage> {
 
 class _SourceSearch extends StatefulWidget {
   final ListeningController controller;
-  final String keyword;
-  const _SourceSearch({required this.controller, required this.keyword});
+  final ListeningSong song;
+  const _SourceSearch({required this.controller, required this.song});
   @override
   State<_SourceSearch> createState() => _SourceSearchState();
 }
 
 class _SourceSearchState extends State<_SourceSearch> {
-  late final input = TextEditingController(text: widget.keyword);
+  late final input = TextEditingController(text: widget.song.name);
+  late final sourceKey = widget.song.source.key;
+  SongNameConsensus? consensus;
+  bool nameApplied = false;
   final List<SearchVideoItemModel> results = [];
   bool busy = false;
   String? error;
@@ -1003,6 +1007,10 @@ class _SourceSearchState extends State<_SourceSearch> {
     setState(() {
       busy = true;
       error = null;
+      if (!more) {
+        consensus = null;
+        nameApplied = false;
+      }
     });
     try {
       final query = more ? keyword : input.text.trim();
@@ -1015,6 +1023,23 @@ class _SourceSearchState extends State<_SourceSearch> {
         page = target;
         keyword = query;
         if (items.isEmpty) error = '没有更多结果，可修改歌曲名称重新搜索';
+      });
+      final unique = <String, String>{};
+      for (final item in results) {
+        if (item.bvid?.isNotEmpty == true) unique[item.bvid!] = item.title;
+      }
+      final inferred = inferSongName(unique.values);
+      final applied =
+          inferred != null &&
+          await widget.controller.applySearchSongName(
+            widget.song,
+            sourceKey,
+            inferred,
+          );
+      if (!mounted) return;
+      setState(() {
+        consensus = inferred;
+        nameApplied = applied;
       });
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
@@ -1050,6 +1075,10 @@ class _SourceSearchState extends State<_SourceSearch> {
             ),
           ),
           if (busy) const LinearProgressIndicator(),
+          if (consensus case final detected?)
+            Text(
+              '${nameApplied ? "已识别歌名" : "候选歌名（保留手动名称）"}：${detected.name} · ${detected.matches}/${detected.total} 个视频',
+            ),
           if (error != null) Text(error!),
           Expanded(
             child: ListView.builder(
