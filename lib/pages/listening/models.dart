@@ -37,6 +37,12 @@ class SongSource {
 class ListeningSong {
   final String id;
   String name;
+  String? chineseName;
+  String? translatedNameSource;
+  String get displayName =>
+      chineseName?.isNotEmpty == true && translatedNameSource == name
+      ? '$name（$chineseName）'
+      : name;
   bool nameEdited;
   String? namedSource;
   final SongSource original;
@@ -50,6 +56,8 @@ class ListeningSong {
   ListeningSong({
     required this.id,
     required this.name,
+    this.chineseName,
+    this.translatedNameSource,
     this.nameEdited = false,
     this.namedSource,
     required this.original,
@@ -72,6 +80,8 @@ class ListeningSong {
   factory ListeningSong.fromJson(Map json) => ListeningSong(
     id: json['id'],
     name: json['name'],
+    chineseName: json['chineseName'],
+    translatedNameSource: json['translatedNameSource'],
     nameEdited:
         json['nameEdited'] ?? (json['name'] != json['original']['title']),
     namedSource: json['namedSource'],
@@ -88,6 +98,8 @@ class ListeningSong {
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
+    'chineseName': chineseName,
+    'translatedNameSource': translatedNameSource,
     'nameEdited': nameEdited,
     'namedSource': namedSource,
     'original': original.toJson(),

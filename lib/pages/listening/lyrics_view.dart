@@ -159,6 +159,10 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
   void _follow() {
     final track = selected;
     if (!mounted || track == null || !isCurrent) return;
+    if (!identical(widget.controller.activeLyrics.value, track) ||
+        widget.controller.lyricsOffset.value != offset) {
+      widget.controller.applyLyricsSettings(track, offset);
+    }
     final index = lyricIndex(
       track.lines,
       widget.controller.position.value,
@@ -226,6 +230,7 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
           tracks.add(translated);
           selected = translated;
         });
+        _follow();
       }
       if (mounted) setState(() => message = '译文已自动保存在本机');
     } catch (e) {
@@ -248,11 +253,7 @@ class _ListeningLyricsViewState extends State<ListeningLyricsView> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(
-        widget.song.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      title: const Text('歌词设置'),
     ),
     body: SafeArea(
       child: Column(

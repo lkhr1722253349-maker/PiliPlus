@@ -249,6 +249,49 @@ class ListeningLyrics {
       sha256.convert(utf8.encode(text)).toString();
   static String sourceKey(ListeningSong song) =>
       key('${song.source.key}:${song.name}');
+  static String? nameLanguage(String name) {
+    if (RegExp(r'[\u3040-\u30ff]').hasMatch(name)) return 'ja';
+    if (RegExp(r'[\uac00-\ud7af]').hasMatch(name)) return 'ko';
+    if (!RegExp(r'[\u3400-\u9fff]').hasMatch(name) &&
+        RegExp('[a-zA-Z]').hasMatch(name))
+      return 'en';
+    return null;
+  }
+
+  Future<LyricTrack?> preferred(ListeningSong song) async {
+    final original = saved(song);
+    if (original?.priority == 0) return original;
+    try {
+      final matches = (await search.search(song.name))
+          .where(
+            (e) =>
+                e.title.trim().toLowerCase() == song.name.trim().toLowerCase(),
+          )
+          .toList();
+      if (matches.length == 1) {
+        final candidate = matches.single;
+        final track = LyricTrack(
+          label: '歌曲歌词 · ${candidate.artist}',
+          source: 'LRCLIB · ${candidate.title}',
+          lines: lrcLines(candidate.lrc),
+          plain: candidate.plain,
+          priority: 0,
+        );
+        await save(song, track);
+        return track;
+      }
+    } catch (_) {
+      /* Saved translations and subtitles remain available offline. */
+    }
+    final translation = saved(song, translation: true);
+    if (translation != null) return translation;
+    if (original != null) return original;
+    final available = await subtitles(song);
+    if (available.isEmpty) return null;
+    await save(song, available.first);
+    return available.first;
+  }
+
   LyricTrack? saved(ListeningSong song, {bool translation = false}) {
     final json = GStorage.localCache.get(
       'listeningLyrics:${translation ? 'translation:' : ''}${sourceKey(song)}',

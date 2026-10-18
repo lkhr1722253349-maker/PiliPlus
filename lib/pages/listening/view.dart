@@ -10,6 +10,8 @@ import 'package:PiliPlus/pages/listening/controller.dart';
 import 'package:PiliPlus/pages/listening/favorite_link.dart';
 import 'package:PiliPlus/pages/listening/models.dart';
 import 'package:PiliPlus/pages/listening/lyrics_view.dart';
+import 'package:PiliPlus/pages/listening/compact_lyrics.dart';
+import 'package:PiliPlus/pages/listening/audio_proxy.dart';
 import 'package:PiliPlus/services/shutdown_timer_service.dart';
 import 'package:PiliPlus/utils/accounts.dart';
 import 'package:PiliPlus/utils/id_utils.dart';
@@ -514,72 +516,99 @@ class _ListeningPageState extends State<ListeningPage> {
       ListeningMode.shuffle => '随机播放',
       ListeningMode.single => '单曲循环',
     };
-    final controls = Row(
-      children: [
-        IconButton(
-          tooltip: '定时关闭',
-          icon: const Icon(Icons.bedtime_outlined, size: 28),
-          onPressed: () => shutdownTimerService.showScheduleExitDialog(
-            context,
-            isFullScreen: false,
-          ),
+    final transport = <Widget>[
+      IconButton(
+        tooltip: '定时关闭',
+        icon: const Icon(Icons.bedtime_outlined, size: 28),
+        onPressed: () => shutdownTimerService.showScheduleExitDialog(
+          context,
+          isFullScreen: false,
         ),
-        IconButton(
-          tooltip: '上一首',
-          icon: const Icon(Icons.skip_previous, size: 30),
-          onPressed: song == null
-              ? null
-              : () => controller.next(previous: true),
+      ),
+      IconButton(
+        tooltip: '上一首',
+        icon: const Icon(Icons.skip_previous, size: 30),
+        onPressed: song == null ? null : () => controller.next(previous: true),
+      ),
+      IconButton.filled(
+        tooltip: controller.playing.value ? '暂停' : '播放',
+        iconSize: 36,
+        padding: const EdgeInsets.all(12),
+        icon: Icon(controller.playing.value ? Icons.pause : Icons.play_arrow),
+        onPressed: song == null || controller.loading.value
+            ? null
+            : () => controller.playing.value
+                  ? controller.pause()
+                  : controller.resume(),
+      ),
+      IconButton(
+        tooltip: '下一首',
+        icon: const Icon(Icons.skip_next, size: 30),
+        onPressed: song == null ? null : () => controller.next(),
+      ),
+      IconButton(
+        tooltip: modeLabel,
+        icon: Icon(switch (controller.mode.value) {
+          ListeningMode.list => Icons.repeat,
+          ListeningMode.shuffle => Icons.shuffle,
+          ListeningMode.single => Icons.repeat_one,
+        }),
+        onPressed: controller.cycleMode,
+      ),
+    ];
+    final listToggle = SizedBox(
+      width: 64,
+      child: TextButton(
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 8),
         ),
-        IconButton.filled(
-          tooltip: controller.playing.value ? '暂停' : '播放',
-          iconSize: 36,
-          padding: const EdgeInsets.all(12),
-          icon: Icon(controller.playing.value ? Icons.pause : Icons.play_arrow),
-          onPressed: song == null || controller.loading.value
-              ? null
-              : () => controller.playing.value
-                    ? controller.pause()
-                    : controller.resume(),
-        ),
-        IconButton(
-          tooltip: '下一首',
-          icon: const Icon(Icons.skip_next, size: 30),
-          onPressed: song == null ? null : () => controller.next(),
-        ),
-        IconButton(
-          tooltip: modeLabel,
-          icon: Icon(switch (controller.mode.value) {
-            ListeningMode.list => Icons.repeat,
-            ListeningMode.shuffle => Icons.shuffle,
-            ListeningMode.single => Icons.repeat_one,
-          }),
-          onPressed: controller.cycleMode,
-        ),
-        const Spacer(),
-        SizedBox(
-          width: 64,
-          child: TextButton(
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              _listExpanded ? Icons.keyboard_arrow_down : Icons.queue_music,
+              size: 28,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  _listExpanded ? Icons.keyboard_arrow_down : Icons.queue_music,
-                  size: 28,
-                ),
-                Text(
-                  _listExpanded ? '收起列表' : '展开列表',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ],
+            Text(
+              _listExpanded ? '收起列表' : '展开列表',
+              style: const TextStyle(fontSize: 12),
             ),
-            onPressed: () => setState(() => _listExpanded = !_listExpanded),
-          ),
+          ],
         ),
-      ],
+        onPressed: () => setState(() => _listExpanded = !_listExpanded),
+      ),
+    );
+    final traffic = song != null && controller.isMobileNetwork.value
+        ? Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Text(
+              '耗费流量：${formatAudioBytes(controller.mobileBytes.value)}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          )
+        : const SizedBox.shrink();
+    final controls = LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 600 &&
+            song != null &&
+            controller.isMobileNetwork.value) {
+          return Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: transport,
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [traffic, listToggle],
+              ),
+            ],
+          );
+        }
+        return Row(
+          children: [...transport, const Spacer(), traffic, listToggle],
+        );
+      },
     );
     return Material(
       elevation: 3,
@@ -593,30 +622,31 @@ class _ListeningPageState extends State<ListeningPage> {
               children: [
                 Expanded(
                   child: InkWell(
-                    onTap: song == null
-                        ? null
-                        : () => Get.to(
-                            () => ListeningLyricsView(
-                              song: song,
-                              controller: controller,
-                            ),
-                          ),
+                    onTap: null,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       child: Row(
                         children: [
                           Expanded(
                             child: Text(
-                              song?.name ?? '尚未选择歌曲',
+                              song?.displayName ?? '尚未选择歌曲',
                               style: Theme.of(context).textTheme.titleMedium,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           if (song != null)
-                            const Padding(
-                              padding: EdgeInsets.only(left: 4),
-                              child: Icon(Icons.lyrics_outlined, size: 20),
+                            IconButton(
+                              tooltip: '歌词设置',
+                              onPressed: () async {
+                                await Get.to(
+                                  () => ListeningLyricsView(
+                                    song: song,
+                                    controller: controller,
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.tune, size: 22),
                             ),
                         ],
                       ),
@@ -681,7 +711,11 @@ class _ListeningPageState extends State<ListeningPage> {
                 ? Icons.music_note_outlined
                 : Icons.error_outline,
           ),
-          title: Text(song.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          title: Text(
+            song.displayName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           subtitle: Text(
             song.error == null
                 ? 'P${song.source.page} · ${song.source.bvid}'
@@ -931,7 +965,7 @@ class _ListeningPageState extends State<ListeningPage> {
                 secondChild: SizedBox(
                   width: constraints.maxWidth,
                   height: constraints.maxHeight,
-                  child: const SizedBox.expand(),
+                  child: CompactListeningLyrics(controller: controller),
                 ),
               ),
             ),

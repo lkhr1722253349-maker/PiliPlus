@@ -189,6 +189,20 @@ void main() {
       expect(player.selected.id, playingList.id);
       expect(find.widgetWithText(ListTile, '曲目 90'), findsOneWidget);
       expect(tester.takeException(), isNull);
+      player.isMobileNetwork.value = true;
+      player.mobileBytes.value = 1536;
+      await tester.pumpAndSettle();
+      expect(find.text('耗费流量：1.5 KB'), findsOneWidget);
+      expect(find.byTooltip('歌词设置'), findsOneWidget);
+      await tester.tap(find.text('收起列表'));
+      await tester.pumpAndSettle();
+      expect(find.text('暂无同步歌词'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      player.isMobileNetwork.value = false;
+      await tester.pumpAndSettle();
+      expect(find.text('耗费流量：1.5 KB'), findsNothing);
+      await tester.tap(find.text('展开列表'));
+      await tester.pumpAndSettle();
       playingList.songs[90].replace(
         const SongSource(
           bvid: 'replacement',

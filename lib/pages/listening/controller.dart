@@ -14,6 +14,7 @@ import 'package:PiliPlus/models_new/fav/fav_folder/list.dart';
 import 'package:PiliPlus/models_new/video/video_detail/data.dart';
 import 'package:PiliPlus/pages/listening/models.dart';
 import 'package:PiliPlus/pages/listening/lyrics.dart';
+import 'package:PiliPlus/pages/listening/audio_proxy.dart';
 import 'package:PiliPlus/plugin/pl_player/controller.dart';
 import 'package:PiliPlus/plugin/pl_player/models/play_status.dart';
 import 'package:PiliPlus/services/service_locator.dart';
@@ -23,6 +24,7 @@ import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_pref.dart';
 import 'package:PiliPlus/utils/video_utils.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:get/get.dart';
 import 'package:media_kit/media_kit.dart';
@@ -41,6 +43,115 @@ class ListeningController extends GetxController {
   final loading = false.obs;
   final mode = ListeningMode.list.obs;
   final speed = 1.0.obs;
+  final activeLyrics = Rxn<LyricTrack>();
+  final lyricsOffset = Duration.zero.obs;
+  final lyricsLoading = false.obs;
+  final isMobileNetwork = false.obs;
+  final mobileBytes = 0.obs;
+  int _receivedMobileBytes = 0;
+  int _trafficSession = 0;
+  int _lyricsRequest = 0;
+  String? _lyricsIdentity;
+  void applyLyricsSettings(LyricTrack track, Duration offset) {
+    _lyricsRequest++;
+    lyricsLoading.value = false;
+    activeLyrics.value = track;
+    lyricsOffset.value = offset;
+  }
+
+  ListeningAudioProxy? _audioProxy;
+  Timer? _trafficTimer;
+  StreamSubscription<List<ConnectivityResult>>? _networkSubscription;
+  Future<void> _watchNetwork() async {
+    if (_networkSubscription != null) return;
+    void update(List<ConnectivityResult> networks) {
+      isMobileNetwork.value =
+          networks.contains(ConnectivityResult.mobile) &&
+          !networks.contains(ConnectivityResult.wifi) &&
+          !networks.contains(ConnectivityResult.ethernet);
+    }
+
+    try {
+      update(await Connectivity().checkConnectivity());
+      _networkSubscription = Connectivity().onConnectivityChanged.listen(
+        update,
+      );
+    } catch (_) {
+      isMobileNetwork.value = false;
+    }
+  }
+
+  Future<void> loadCurrentLyrics() async {
+    final song = current.value;
+    final request = ++_lyricsRequest;
+    activeLyrics.value = null;
+    if (song == null) return;
+    _lyricsIdentity = '${song.source.key}:${song.name}';
+    lyricsOffset.value = Duration(
+      milliseconds: GStorage.localCache.get(
+        'listeningLyricsOffset:${song.source.key}',
+        defaultValue: 0,
+      ),
+    );
+    final service = ListeningLyrics();
+    final cached = service.saved(song);
+    activeLyrics.value = cached?.priority == 0
+        ? cached
+        : service.saved(song, translation: true) ?? cached;
+    lyricsLoading.value = true;
+    final name = song.name;
+    try {
+      final snapshot = ListeningSong(
+        id: song.id,
+        name: name,
+        original: song.original,
+        source: song.source,
+      );
+      final track = await service.preferred(snapshot);
+      if (request == _lyricsRequest &&
+          identical(current.value, song) &&
+          song.name == name)
+        activeLyrics.value = track;
+    } catch (_) {
+      /* Keep the cached lyrics when a service is unavailable. */
+    } finally {
+      service.close();
+      if (request == _lyricsRequest) lyricsLoading.value = false;
+    }
+  }
+
+  bool _translatingNames = false;
+  Future<void> translateSongNames() async {
+    if (_translatingNames) return;
+    _translatingNames = true;
+    final service = ListeningLyrics();
+    try {
+      for (final list in playlists.toList()) {
+        for (final song in list.songs.toList()) {
+          final name = song.name;
+          final language = ListeningLyrics.nameLanguage(name);
+          if (language == null || song.translatedNameSource == name) continue;
+          try {
+            final translated = await service.translateLine(name, language);
+            if (song.name != name || !list.songs.contains(song)) continue;
+            song.translatedNameSource = name;
+            song.chineseName =
+                translated != name &&
+                    RegExp(r'[\u3400-\u9fff]').hasMatch(translated)
+                ? translated
+                : null;
+            await save();
+          } catch (_) {
+            return;
+          } // Do not exhaust quota with more failed requests.
+        }
+      }
+    } finally {
+      service.close();
+      _translatingNames = false;
+    }
+  }
+
   Player? _player;
   Future<Player>? _creatingPlayer;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
@@ -86,6 +197,8 @@ class ListeningController extends GetxController {
       if (_namingPending) {
         _namingPending = false;
         unawaited(refreshSongNames());
+      } else {
+        unawaited(translateSongNames());
       }
     }
   }
@@ -121,10 +234,15 @@ class ListeningController extends GetxController {
     final item = videoPlayerServiceHandler?.mediaItem.value;
     if (_ownsMediaSession &&
         song != null &&
+        _lyricsIdentity != '${song.source.key}:${song.name}') {
+      unawaited(loadCurrentLyrics());
+    }
+    if (_ownsMediaSession &&
+        song != null &&
         item?.id == 'listening:${song.id}' &&
-        item!.title != song.name) {
+        item!.title != song.displayName) {
       videoPlayerServiceHandler?.setListeningMediaItem(
-        item.copyWith(title: song.name),
+        item.copyWith(title: song.displayName),
       );
     }
   }
@@ -392,6 +510,11 @@ class ListeningController extends GetxController {
     await _player?.pause();
     if (request != _request) return;
     current.value = song;
+    if (attempt == 0) {
+      _trafficSession++;
+      _receivedMobileBytes = 0;
+      mobileBytes.value = 0;
+    }
     _playingPlaylistId = list.id;
     position.value = duration.value = Duration.zero;
     try {
@@ -451,7 +574,7 @@ class ListeningController extends GetxController {
       videoPlayerServiceHandler?.setListeningMediaItem(
         MediaItem(
           id: 'listening:${song.id}',
-          title: song.name,
+          title: song.displayName,
           album: list.name,
           artUri: song.source.cover.isEmpty
               ? null
@@ -463,7 +586,29 @@ class ListeningController extends GetxController {
         headers: {'Referer': 'https://www.bilibili.com/'},
       );
       _openError = null;
-      await player.open(Media(url));
+      await _watchNetwork();
+      if (request != _request) return;
+      _trafficTimer ??= Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => mobileBytes.value = _receivedMobileBytes,
+      );
+      final trafficSession = _trafficSession;
+      final previousProxy = _audioProxy;
+      _audioProxy = null;
+      await previousProxy?.close();
+      if (request != _request) return;
+      final proxy = await ListeningAudioProxy.create(Uri.parse(url), (bytes) {
+        if (trafficSession == _trafficSession && isMobileNetwork.value)
+          _receivedMobileBytes += bytes;
+      }, userAgent: BrowserUa.pc);
+      if (request != _request) {
+        await proxy.close();
+        return;
+      }
+      _audioProxy = proxy;
+      unawaited(loadCurrentLyrics());
+      _openError = null;
+      await player.open(Media(proxy.url));
       if (_openError != null) throw StateError(_openError!);
       await player.setRate(speed.value);
       song.error = null;
@@ -594,6 +739,10 @@ class ListeningController extends GetxController {
   @override
   void onClose() {
     ++_request;
+    ++_lyricsRequest;
+    _trafficTimer?.cancel();
+    _networkSubscription?.cancel();
+    _audioProxy?.close();
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
