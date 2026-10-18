@@ -651,10 +651,16 @@ class ListeningController extends GetxController {
       _audioProxy = null;
       await previousProxy?.close();
       if (request != _request) return;
-      final proxy = await ListeningAudioProxy.create(Uri.parse(url), (bytes) {
-        if (trafficSession == _trafficSession && isMobileNetwork.value)
-          _receivedMobileBytes += bytes;
-      }, userAgent: BrowserUa.pc);
+      final proxy = await ListeningAudioProxy.create(
+        Uri.parse(url),
+        (bytes) {
+          if (trafficSession == _trafficSession && isMobileNetwork.value) {
+            _receivedMobileBytes += bytes;
+          }
+        },
+        userAgent: BrowserUa.pc,
+        cacheKey: song.source.key,
+      );
       if (request != _request) {
         await proxy.close();
         return;
