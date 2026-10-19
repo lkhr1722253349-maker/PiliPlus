@@ -2,6 +2,8 @@
     <img width="200" height="200" src="assets/images/logo/logo.png">
 </div>
 
+> 本仓库是 [PiliPlus 原项目](https://github.com/bggRGjQaUbCoE/PiliPlus)的二次开发版本，非原项目官方发布。请勿将此版本用于商业用途；本请求不改变项目 [GPLv3](LICENSE) 授予的权利。
+
 
 
 <div align="center">

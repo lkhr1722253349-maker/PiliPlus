@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 
 import 'package:PiliPlus/build_config.dart';
 import 'package:PiliPlus/common/constants.dart';
@@ -11,9 +11,13 @@ import 'package:PiliPlus/utils/storage.dart';
 import 'package:PiliPlus/utils/storage_key.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
+import 'package:crypto/crypto.dart';
+import 'package:flutter_bspatch/flutter_bspatch.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path_provider/path_provider.dart';
 
 abstract final class Update {
   // 检查更新
@@ -103,7 +107,9 @@ abstract final class Update {
                   downloadBtn('rpm', ext: 'rpm'),
                   downloadBtn('deb', ext: 'deb'),
                   downloadBtn('targz', ext: 'tar.gz'),
-                ] else
+                ] else if (Platform.isAndroid)
+                  downloadBtn('下载并安装（优先差分）')
+                else
                   downloadBtn('Github'),
               ],
             );
@@ -136,14 +142,78 @@ abstract final class Update {
       if (Platform.isAndroid) {
         // 获取设备信息
         AndroidDeviceInfo androidInfo = await DeviceInfoPlugin().androidInfo;
-        // [arm64-v8a]
-        download(androidInfo.supportedAbis.first);
+        final abi = androidInfo.supportedAbis.first;
+        final assets = (data['assets'] as List).cast<Map<String, dynamic>>();
+        final apk = assets
+            .where((asset) => (asset['name'] as String).endsWith('_$abi.apk'))
+            .firstOrNull;
+        if (apk == null) throw UnsupportedError('APK not found: $abi');
+        await _installAndroidUpdate(assets, apk, abi);
       } else {
         download(Platform.operatingSystem);
       }
     } catch (e) {
       if (kDebugMode) debugPrint('download error: $e');
       PageUtils.launchURL('${Constants.sourceCodeUrl}/releases/latest');
+    }
+  }
+
+  static Future<void> _installAndroidUpdate(
+    List<Map<String, dynamic>> assets,
+    Map<String, dynamic> apk,
+    String abi,
+  ) async {
+    const channel = MethodChannel('com.example.piliplus/update');
+    final directory = await getTemporaryDirectory();
+    final output = File('${directory.path}/piliplus-update.apk');
+    final patchFile = File('${directory.path}/piliplus-update.patch');
+    final patchName =
+        'PiliPlus_android_from_${BuildConfig.versionCode}_$abi.patch';
+    final patches = assets.where((asset) => asset['name'] == patchName);
+    final patch = patches.isEmpty ? null : patches.first;
+    SmartDialog.showLoading(msg: '正在下载更新');
+    try {
+      if (output.existsSync()) output.deleteSync();
+      if (patch != null &&
+          (patch['size'] as num) < (apk['size'] as num) * 0.8) {
+        try {
+          final oldPath = await channel.invokeMethod<String>(
+            'installedApkPath',
+          );
+          if (oldPath == null) throw StateError('Installed APK unavailable');
+          await Dio().download(patch['browser_download_url'], patchFile.path);
+          SmartDialog.showLoading(msg: '正在校验并合成安装包');
+          await BsPatch.patch(
+            oldFile: oldPath,
+            patchFile: patchFile.path,
+            newFile: output.path,
+          );
+          await _verifyApk(output, apk);
+        } catch (e) {
+          if (kDebugMode) debugPrint('Delta update fallback: $e');
+          if (output.existsSync()) output.deleteSync();
+        }
+      }
+      if (!output.existsSync()) {
+        SmartDialog.showLoading(msg: '正在下载完整安装包');
+        await Dio().download(apk['browser_download_url'], output.path);
+        await _verifyApk(output, apk);
+      }
+      await channel.invokeMethod<void>('installApk', {'path': output.path});
+    } finally {
+      SmartDialog.dismiss();
+      if (patchFile.existsSync()) patchFile.deleteSync();
+    }
+  }
+
+  static Future<void> _verifyApk(File file, Map<String, dynamic> asset) async {
+    final digest = asset['digest'];
+    if (digest is! String || !digest.startsWith('sha256:')) {
+      throw const FormatException('GitHub release asset has no SHA-256 digest');
+    }
+    final actual = await sha256.bind(file.openRead()).first;
+    if (actual.toString() != digest.substring(7)) {
+      throw const FormatException('APK SHA-256 mismatch');
     }
   }
 }

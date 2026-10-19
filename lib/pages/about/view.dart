@@ -178,6 +178,15 @@ Commit Hash: ${BuildConfig.commitHash}''',
             title: const Text('Source Code'),
             subtitle: Text(Constants.sourceCodeUrl, style: subTitleStyle),
           ),
+          ListTile(
+            onTap: () => PageUtils.launchURL(Constants.originalSourceCodeUrl),
+            leading: const Icon(Icons.fork_right),
+            title: const Text('原项目'),
+            subtitle: Text(
+              Constants.originalSourceCodeUrl,
+              style: subTitleStyle,
+            ),
+          ),
           if (Platform.isAndroid)
             ListTile(
               onTap: AndroidHelper.openLinkVerifySettings,

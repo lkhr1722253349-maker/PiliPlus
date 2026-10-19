@@ -85,13 +85,15 @@ jobs:
             - name: Write key
               if: github.event_name == 'workflow_dispatch'
               run: |
-                  if [ ! -z "${{ secrets.SIGN_KEYSTORE_BASE64 }}" ]; then
-                    echo "${{ secrets.SIGN_KEYSTORE_BASE64 }}" | base64 --decode > android/app/key.jks
-                    echo storeFile='key.jks' >> android/key.properties
-                    echo storePassword='${{ secrets.KEYSTORE_PASSWORD }}' >> android/key.properties
-                    echo keyAlias='${{ secrets.KEY_ALIAS }}' >> android/key.properties
-                    echo keyPassword='${{ secrets.KEY_PASSWORD }}' >> android/key.properties
-                  fi
+                  test -n '${{ secrets.SIGN_KEYSTORE_BASE64 }}'
+                  test -n '${{ secrets.KEYSTORE_PASSWORD }}'
+                  test -n '${{ secrets.KEY_ALIAS }}'
+                  test -n '${{ secrets.KEY_PASSWORD }}'
+                  echo "${{ secrets.SIGN_KEYSTORE_BASE64 }}" | base64 --decode > android/app/key.jks
+                  echo storeFile='key.jks' >> android/key.properties
+                  echo storePassword='${{ secrets.KEYSTORE_PASSWORD }}' >> android/key.properties
+                  echo keyAlias='${{ secrets.KEY_ALIAS }}' >> android/key.properties
+                  echo keyPassword='${{ secrets.KEY_PASSWORD }}' >> android/key.properties
 
             - name: Set and Extract version
               if: ${{ github.event_name == 'workflow_dispatch' }}
@@ -115,13 +117,56 @@ jobs:
                   done
               shell: bash
 
+            - name: Create Android delta patches
+              if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  CURRENT_TAG: ${{ github.event.inputs.tag }}
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  previous_tag=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=20" --jq ".[] | select(.tag_name != \"${CURRENT_TAG}\" and .draft == false) | .tag_name" | head -n 1)
+                  if [[ -z "$previous_tag" ]]; then
+                    echo 'No previous fork release; this release establishes the delta base.'
+                    exit 0
+                  fi
+                  mkdir -p previous
+                  gh release download "$previous_tag" --pattern 'PiliPlus_android_*_*.apk' --dir previous
+                  sudo apt-get update -qq
+                  sudo apt-get install -y bsdiff
+                  for abi in arm64-v8a armeabi-v7a x86_64; do
+                    old=$(find previous -maxdepth 1 -name "PiliPlus_android_*_${abi}.apk" -print -quit)
+                    new=$(find . -maxdepth 1 -name "PiliPlus_android_*_${abi}.apk" -print -quit)
+                    [[ -n "$old" && -n "$new" ]] || continue
+                    if [[ "$(basename "$old")" =~ \+([0-9]+)_${abi}\.apk$ ]]; then
+                      old_code="${BASH_REMATCH[1]}"
+                    else
+                      continue
+                    fi
+                    patch="PiliPlus_android_from_${old_code}_${abi}.patch"
+                    bsdiff "$old" "$new" "$patch"
+                    bspatch "$old" "reconstructed_${abi}.apk" "$patch"
+                    cmp "$new" "reconstructed_${abi}.apk"
+                    rm "reconstructed_${abi}.apk"
+                    if (( $(stat -c%s "$patch") * 10 >= $(stat -c%s "$new") * 8 )); then
+                      rm "$patch"
+                    fi
+                  done
+
             - name: Release
               if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
               uses: softprops/action-gh-release@v3
               with:
                   tag_name: ${{ github.event.inputs.tag }}
                   name: ${{ github.event.inputs.tag }}
-                  files: PiliPlus_android_*.apk
+                  body: |
+                      PiliPlus 二次开发版本，非原项目官方发布。
+                      原项目：https://github.com/bggRGjQaUbCoE/PiliPlus
+                      请勿将此版本用于商业用途；项目仍按 GPLv3 授权。
+                      Android 增量补丁从下一个版本起生成，客户端会校验并在失败时回退完整 APK。
+                  files: |
+                      PiliPlus_android_*.apk
+                      PiliPlus_android_*.patch
 
             - name: 上传
               uses: actions/upload-artifact@v7

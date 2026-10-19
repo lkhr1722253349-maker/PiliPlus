@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:PiliPlus/common/style.dart';
+import 'package:PiliPlus/common/constants.dart';
 import 'package:PiliPlus/common/widgets/floating_navigation_bar.dart';
 import 'package:PiliPlus/common/widgets/flutter/pop_scope.dart';
 import 'package:PiliPlus/common/widgets/image/network_img_layer.dart';
@@ -19,6 +20,9 @@ import 'package:PiliPlus/utils/extension/theme_ext.dart';
 import 'package:PiliPlus/utils/mobile_observer.dart';
 import 'package:PiliPlus/utils/platform_utils.dart';
 import 'package:PiliPlus/utils/storage.dart';
+import 'package:PiliPlus/utils/storage_pref.dart';
+import 'package:PiliPlus/utils/update.dart';
+import 'package:PiliPlus/utils/page_utils.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:material_ui/material_ui.dart';
@@ -44,6 +48,7 @@ class _MainAppState extends PopScopeState<MainApp>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showForkNotice());
     addObserverMobile(this);
     if (Platform.isMacOS) {
       HardwareKeyboard.instance.addHandler(_handleKeyEvent);
@@ -54,6 +59,48 @@ class _MainAppState extends PopScopeState<MainApp>
     }
     if (!Platform.isMacOS) {
       PiliScheme.init();
+    }
+  }
+
+  Future<void> _showForkNotice() async {
+    const key = 'forkNoticeAcknowledgedV1';
+    if (GStorage.setting.get(key) != true && mounted) {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('二次开发版本说明'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('这是 PiliPlus 的二次开发版本，并非原项目官方发布。'),
+                const SizedBox(height: 12),
+                const Text('原项目：${Constants.originalSourceCodeUrl}'),
+                TextButton(
+                  onPressed: () => PageUtils.launchURL(
+                    Constants.originalSourceCodeUrl,
+                  ),
+                  child: const Text('查看原项目'),
+                ),
+                const SizedBox(height: 12),
+                const Text('请勿将此版本用于商业用途。项目仍按 GPLv3 授权；此提示不改变许可证授予的权利。'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('我知道了'),
+            ),
+          ],
+        ),
+      );
+      await GStorage.setting.put(key, true);
+    }
+    if (mounted && Pref.autoUpdate) {
+      Update.checkUpdate();
     }
   }
 

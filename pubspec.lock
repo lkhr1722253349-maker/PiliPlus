@@ -622,6 +622,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_bspatch:
+    dependency: "direct main"
+    description:
+      name: flutter_bspatch
+      sha256: "46a1fa6dedd764f54e11c6947f1cc170c80bfc31ab10cf1ff0f7b18c3b51f7d9"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.1"
   flutter_displaymode:
     dependency: "direct main"
     description:

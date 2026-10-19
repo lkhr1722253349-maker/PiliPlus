@@ -72,10 +72,6 @@ class MainController extends GetxController
   @override
   void onInit() {
     super.onInit();
-    if (Pref.autoUpdate) {
-      Update.checkUpdate();
-    }
-
     setNavBarConfig();
 
     controller = mainTabBarView
