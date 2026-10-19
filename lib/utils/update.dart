@@ -70,10 +70,10 @@ abstract final class Update {
                       Text('${data['body']}'),
                       TextButton(
                         onPressed: () => PageUtils.launchURL(
-                          '${Constants.sourceCodeUrl}/commits/main',
+                          '${Constants.sourceCodeUrl}/compare/${BuildConfig.commitHash}...${data['tag_name']}',
                         ),
                         child: Text(
-                          "点此查看完整更新(即commit)内容",
+                          '查看两个版本之间的提交',
                           style: TextStyle(color: colorScheme.primary),
                         ),
                       ),
