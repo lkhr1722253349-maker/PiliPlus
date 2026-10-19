@@ -163,7 +163,8 @@ jobs:
                       PiliPlus 二次开发版本，非原项目官方发布。
                       原项目：https://github.com/bggRGjQaUbCoE/PiliPlus
                       请勿将此版本用于商业用途；项目仍按 GPLv3 授权。
-                      Android 增量补丁从下一个版本起生成，客户端会校验并在失败时回退完整 APK。
+                      听歌歌单支持从网易云歌曲 / 歌单链接导入，并按歌名、歌手和时长匹配 B 站音源。
+                      Android：发布完整 APK；存在适配当前版本的差分包时优先使用，校验失败自动回退完整包。
                   files: |
                       PiliPlus_android_*.apk
                       PiliPlus_android_*.patch

@@ -9,6 +9,7 @@ import 'package:PiliPlus/models_new/video/video_detail/page.dart';
 import 'package:PiliPlus/pages/listening/controller.dart';
 import 'package:PiliPlus/pages/listening/favorite_link.dart';
 import 'package:PiliPlus/pages/listening/models.dart';
+import 'package:PiliPlus/pages/listening/netease.dart';
 import 'package:PiliPlus/pages/listening/song_name.dart';
 import 'package:PiliPlus/pages/listening/lyrics_view.dart';
 import 'package:PiliPlus/pages/listening/compact_lyrics.dart';
@@ -424,6 +425,148 @@ class _ListeningPageState extends State<ListeningPage> {
       }
     }
     SmartDialog.showToast('导入结束，已保存歌单；重复分 P 已合并');
+  }
+
+  Future<void> _importNetease() async {
+    final input = await _text(
+      '从网易云链接导入',
+      hint: '歌曲 / 歌单链接，支持 163cn.tv 短链',
+    );
+    if (input == null) return;
+    setState(() => _progress = '正在读取网易云链接');
+    final collection = await NeteaseClient.load(input);
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(collection.title),
+        content: Text(
+          '共 ${collection.songs.length} 首歌曲，将按歌名、歌手和时长匹配 B 站音源，'
+          '优先选择时长接近且播放量高的版本。\n\n'
+          '未匹配的歌曲会保留为待换源条目，可稍后手动搜索。导入过程可随时停止。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('开始导入'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final list = controller.selected;
+    _cancelImport = false;
+    var matched = 0;
+    var pending = 0;
+    for (var i = 0; i < collection.songs.length; i++) {
+      if (!mounted || _cancelImport) break;
+      final song = collection.songs[i];
+      setState(
+        () => _progress =
+            '匹配第 ${i + 1}/${collection.songs.length} 首：${song.displayName}',
+      );
+      try {
+        var candidates = await controller.search(
+          '${song.name} ${song.artists}',
+          1,
+        );
+        var best = bestNeteaseCandidate(song, candidates);
+        if (best == null && song.artists.isNotEmpty) {
+          candidates = await controller.search(song.name, 1);
+          best = bestNeteaseCandidate(song, candidates);
+        }
+        if (best == null || best.bvid == null || best.bvid!.isEmpty) {
+          _addNeteasePending(list, song);
+          pending++;
+        } else {
+          final detail = await controller.detail(best.bvid!);
+          final part = _bestNeteasePart(detail, song.durationMs);
+          final source = _source(detail, part);
+          final added = list.add(
+            ListeningSong(
+              id: controller.newId(),
+              name: song.name,
+              nameEdited: true,
+              namedSource: 'netease',
+              original: source,
+            ),
+          );
+          if (added) matched++;
+        }
+      } catch (e) {
+        _addNeteasePending(list, song, error: '匹配失败：$e');
+        pending++;
+      }
+      if ((i + 1) % 5 == 0) await controller.save();
+      // Bilibili search is rate limited; keep the import gentle.
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    await controller.save();
+    if (!mounted) return;
+    if (pending > 0) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('导入完成'),
+          content: Text(
+            '已匹配 $matched 首，待换源 $pending 首。待换源歌曲已保留在歌单中，'
+            '点击歌曲右侧菜单的“搜索换源”即可手动选择。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      SmartDialog.showToast('导入完成，已匹配 $matched 首');
+    }
+  }
+
+  void _addNeteasePending(
+    ListeningPlaylist list,
+    NeteaseSong song, {
+    String? error,
+  }) {
+    final source = SongSource(
+      bvid: 'netease_${song.id}',
+      aid: song.id,
+      cid: 0,
+      page: 1,
+      title: song.name,
+      cover: song.cover,
+    );
+    list.add(
+      ListeningSong(
+        id: controller.newId(),
+        name: song.name,
+        nameEdited: true,
+        namedSource: 'netease',
+        original: source,
+        error: error ?? '未找到匹配的 B 站音源，请手动换源',
+      ),
+    );
+  }
+
+  Part _bestNeteasePart(VideoDetailData detail, int durationMs) {
+    final parts = (detail.pages ?? [])
+        .where((part) => part.cid != null)
+        .toList();
+    if (parts.isEmpty) throw StateError('没有可用的分 P');
+    final target = durationMs / 1000;
+    parts.sort((a, b) {
+      final ad = ((a.duration ?? 0) - target).abs();
+      final bd = ((b.duration ?? 0) - target).abs();
+      return ad.compareTo(bd);
+    });
+    return parts.first;
   }
 
   Future<void> _replace(ListeningSong song) async {
@@ -914,6 +1057,10 @@ class _ListeningPageState extends State<ListeningPage> {
             MenuItemButton(
               onPressed: () => _run(_importFavorites),
               child: const Text('从我的收藏夹导入'),
+            ),
+            MenuItemButton(
+              onPressed: () => _run(_importNetease),
+              child: const Text('从网易云链接导入'),
             ),
           ],
           builder: (context, menu, child) => IconButton(
