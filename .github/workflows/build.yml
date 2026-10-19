@@ -170,6 +170,24 @@ jobs:
                       PiliPlus_android_*_arm64-v8a.apk
                       PiliPlus_android_from_*_arm64-v8a.patch
 
+            - name: Prune older releases
+              if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  CURRENT_TAG: ${{ github.event.inputs.tag }}
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  # Fail fast: never delete the base release if this release is missing.
+                  gh release view "$CURRENT_TAG" >/dev/null
+                  mapfile -t tags < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[] | select(.draft == false) | .tag_name')
+                  for t in "${tags[@]}"; do
+                    [[ "$t" == "$CURRENT_TAG" ]] && continue
+                    echo "Removing older release $t (the new delta patch replaces it)"
+                    gh release delete "$t" --yes --cleanup-tag
+                  done
+                  echo "Remaining release: $CURRENT_TAG"
+
             - name: 上传
               uses: actions/upload-artifact@v7
               with:
