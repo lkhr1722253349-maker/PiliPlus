@@ -102,7 +102,7 @@ jobs:
 
             - name: Flutter Build Release Apk
               if: ${{ github.event_name == 'workflow_dispatch' }}
-              run: flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --no-pub
+              run: flutter build apk --release --target-platform android-arm64 --split-per-abi --dart-define-from-file=pili_release.json --no-pub
 
             - name: Flutter Build Dev Apk
               if: ${{ github.event_name == 'pull_request' }}
@@ -134,7 +134,7 @@ jobs:
                   gh release download "$previous_tag" --pattern 'PiliPlus_android_*_*.apk' --dir previous
                   sudo apt-get update -qq
                   sudo apt-get install -y bsdiff
-                  for abi in arm64-v8a armeabi-v7a x86_64; do
+                  for abi in arm64-v8a; do
                     old=$(find previous -maxdepth 1 -name "PiliPlus_android_*_${abi}.apk" -print -quit)
                     new=$(find . -maxdepth 1 -name "PiliPlus_android_*_${abi}.apk" -print -quit)
                     [[ -n "$old" && -n "$new" ]] || continue
@@ -164,10 +164,11 @@ jobs:
                       原项目：https://github.com/bggRGjQaUbCoE/PiliPlus
                       请勿将此版本用于商业用途；项目仍按 GPLv3 授权。
                       听歌歌单支持从网易云歌曲 / 歌单链接导入，并按歌名、歌手和时长匹配 B 站音源。
-                      Android：发布完整 APK；存在适配当前版本的差分包时优先使用，校验失败自动回退完整包。
+                      Android：仅提供 arm64-v8a 两个文件——完整包 PiliPlus_android_*.apk 与差分包 PiliPlus_android_from_*.patch。
+                      应用内更新优先使用差分包，校验失败自动回退完整包。
                   files: |
-                      PiliPlus_android_*.apk
-                      PiliPlus_android_*.patch
+                      PiliPlus_android_*_arm64-v8a.apk
+                      PiliPlus_android_from_*_arm64-v8a.patch
 
             - name: 上传
               uses: actions/upload-artifact@v7
@@ -175,20 +176,6 @@ jobs:
                   archive: false
                   name: Android_arm64-v8a
                   path: PiliPlus_android_*_arm64-v8a.apk
-
-            - name: 上传
-              uses: actions/upload-artifact@v7
-              with:
-                  archive: false
-                  name: Android_armeabi-v7a
-                  path: PiliPlus_android_*_armeabi-v7a.apk
-
-            - name: 上传
-              uses: actions/upload-artifact@v7
-              with:
-                  archive: false
-                  name: Android_x86_64
-                  path: PiliPlus_android_*_x86_64.apk
 
     ios:
         if: ${{ (github.event_name == 'pull_request' && github.repository == 'bggRGjQaUbCoE/PiliPlus') || github.event.inputs.build_ios == 'true' }}
