@@ -563,6 +563,14 @@ class LyricTrack {
   );
 }
 
+/// Translation failures keep the completed work and are split into a
+/// per-request failure and a service-wide quota failure, so one bad request
+/// cannot stop the whole queue.
+class LyricsTranslationException extends StateError {
+  final bool quota;
+  LyricsTranslationException(super.message, {this.quota = false});
+}
+
 class ListeningLyrics {
   final LyricsSearch search = LyricsSearch();
   final Dio _translation;
@@ -716,15 +724,21 @@ class ListeningLyrics {
   }
 
   Future<String> translateLine(String text, String language) async {
+    final source = language.trim();
+    // MyMemory requires two distinct, concrete languages; it rejects
+    // "autodetect" with HTTP 403, which must never be reported as quota.
+    if (!RegExp(r'^[a-z]{2,3}(?:-[A-Za-z]{2,4})?$').hasMatch(source) ||
+        source == 'autodetect')
+      throw LyricsTranslationException('无法判断原文语言，已跳过翻译');
     final cacheKey =
-        'listeningTranslation:${key('mymemory:$language:zh-CN:$text')}';
+        'listeningTranslation:${key('mymemory:$source:zh-CN:$text')}';
     final cached = GStorage.localCache.get(cacheKey);
     if (cached is String && cached.isNotEmpty) return cached;
     final segments = chunks(text);
     if (segments.length > 1) {
       final values = <String>[];
       for (final segment in segments) {
-        values.add(await translateLine(segment, language));
+        values.add(await translateLine(segment, source));
       }
       final joined = values.join();
       await GStorage.localCache.put(cacheKey, joined);
@@ -734,19 +748,38 @@ class ListeningLyrics {
     for (final part in chunks(text)) {
       final res = await _translation.get(
         '/get',
-        queryParameters: {'q': part, 'langpair': '$language|zh-CN', 'mt': 1},
+        queryParameters: {'q': part, 'langpair': '$source|zh-CN', 'mt': 1},
       );
       final data = res.data;
-      if ('${data['responseStatus']}' != '200' || data['quotaFinished'] == true)
-        throw StateError('免费翻译额度不足或服务暂不可用，已完成的译文已保存');
+      // Only a real quota/rate-limit answer stops the whole queue; any other
+      // bad answer stays a per-name failure.
+      if (data['quotaFinished'] == true ||
+          '${data['responseStatus']}' == '429')
+        throw LyricsTranslationException(
+          '免费翻译额度不足或服务暂不可用，已完成的译文已保存',
+          quota: true,
+        );
+      if ('${data['responseStatus']}' != '200')
+        throw LyricsTranslationException('翻译服务暂不可用，已完成的译文已保存');
       final value = data['responseData']?['translatedText'];
       if (value is! String || value.trim().isEmpty)
-        throw StateError('翻译服务未返回译文');
+        throw LyricsTranslationException('翻译服务未返回译文');
       translated.add(parseFragment(value).text ?? value);
     }
     final result = translated.join();
     await GStorage.localCache.put(cacheKey, result);
     return result;
+  }
+
+  /// Translates a song name once, only when the source language is known.
+  /// Returns `null` when the name needs no (or cannot get a) Chinese name.
+  Future<String?> translateName(String name, {String context = ''}) async {
+    final language = nameLanguage(name, context: context);
+    if (language == null) return null;
+    final translated = (await translateLine(name, language)).trim();
+    if (translated.isEmpty || translated == name.trim()) return null;
+    if (!RegExp(r'[\u3400-\u9fff]').hasMatch(translated)) return null;
+    return translated;
   }
 
   void close() {

@@ -29,6 +29,7 @@ void main() {
       Uri.parse('http://127.0.0.1:${server.port}/test'),
       (count) => bytes += count,
       userAgent: 'Test',
+      cacheKey: 'test-cache-key',
     );
     final client = HttpClient();
     try {

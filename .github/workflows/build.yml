@@ -32,7 +32,7 @@ on:
             build_win_x64:
                 description: "Build Win-x64"
                 required: false
-                default: false
+                default: true
                 type: boolean
 
             build_linux_x64:
@@ -166,6 +166,7 @@ jobs:
                       听歌歌单支持从网易云歌曲 / 歌单链接导入，并按歌名、歌手和时长匹配 B 站音源。
                       Android：仅提供 arm64-v8a 两个文件——完整包 PiliPlus_android_*.apk 与差分包 PiliPlus_android_from_*.patch。
                       应用内更新优先使用差分包，校验失败自动回退完整包。
+                      Windows：提供 PiliPlus_windows_*_x64_setup.exe 安装版与 PiliPlus_windows_*_x64_portable.zip 便携版，随同一次构建产出。
                   files: |
                       PiliPlus_android_*_arm64-v8a.apk
                       PiliPlus_android_from_*_arm64-v8a.patch

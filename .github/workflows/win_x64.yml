@@ -29,11 +29,24 @@ jobs:
       - name: Add fastforge and Inno Setup
         run: |
           dart pub global activate fastforge
-          choco install innosetup
+          choco install innosetup --no-progress -y
 
       - name: Add Chinese language file for Inno Setup
         run: |
-          Copy-Item "windows/packaging/exe/ChineseSimplified.isl" "C:\Program Files (x86)\Inno Setup 6\Languages\ChineseSimplified.isl"
+          $isl = "windows/packaging/exe/ChineseSimplified.isl"
+          $copied = $false
+          foreach ($dir in @(
+              "C:\Program Files (x86)\Inno Setup 6",
+              "C:\Program Files\Inno Setup 6",
+              "C:\Program Files (x86)\Inno Setup 7",
+              "C:\Program Files\Inno Setup 7")) {
+            if (Test-Path $dir) {
+              Copy-Item $isl "$dir\Languages\ChineseSimplified.isl" -Force
+              Write-Host "copied ChineseSimplified.isl to $dir"
+              $copied = $true
+            }
+          }
+          if (-not $copied) { throw "Inno Setup install directory not found" }
         shell: pwsh
 
       - name: Set and Extract version

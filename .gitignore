@@ -79,6 +79,8 @@ app.*.map.json
 # Local build artifacts dropped in the repo root
 /PiliPlus_android_*.apk
 /PiliPlus_android_*.patch
+/PiliPlus_windows_*.zip
+/Release/
 
 # iOS/XCode related
 **/ios/**/*.mode1v3

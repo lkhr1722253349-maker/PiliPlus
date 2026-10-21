@@ -13,7 +13,10 @@ import 'package:material_ui/material_ui.dart';
 class FakeSearch extends LyricsSearch {
   final queries = <String>[];
   @override
-  Future<List<LyricCandidate>> search(String name) async {
+  Future<List<LyricCandidate>> search(
+    String name, {
+    Iterable<String> hints = const [],
+  }) async {
     queries.add(name);
     return [
       LyricCandidate({

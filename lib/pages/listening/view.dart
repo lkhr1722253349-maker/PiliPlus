@@ -47,9 +47,14 @@ class _ListeningPageState extends State<ListeningPage> {
   void initState() {
     super.initState();
     controller.onUnavailable = _onUnavailable;
+    controller.onNotice = _onNotice;
     _focusWorker = ever(controller.focusRequest, (_) => _focusPlayingSong());
     controller.focusCurrentSong();
     unawaited(controller.refreshSongNames());
+  }
+
+  void _onNotice(String message) {
+    if (mounted) SmartDialog.showToast(message);
   }
 
   void _focusPlayingSong() {
@@ -877,6 +882,16 @@ class _ListeningPageState extends State<ListeningPage> {
                   await _replace(song);
                 case 'tags':
                   await _chooseSongTag(song);
+                case 'recognize':
+                  if (song.nameEdited) {
+                    SmartDialog.showToast('已手动命名，自动识别不会覆盖');
+                    return;
+                  }
+                  final recognized = await controller.recognizeSongName(song);
+                  if (!recognized)
+                    SmartDialog.showToast('没有足够的同名视频可以确认歌名');
+                  else
+                    SmartDialog.showToast('已识别歌名：${song.name}');
                 case 'lyrics':
                   await Get.to(
                     () =>
@@ -943,6 +958,7 @@ class _ListeningPageState extends State<ListeningPage> {
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'lyrics', child: Text('歌词设置')),
               const PopupMenuItem(value: 'tags', child: Text('使用歌曲标签命名')),
+              const PopupMenuItem(value: 'recognize', child: Text('按同名视频识别歌名')),
               const PopupMenuItem(value: 'replace', child: Text('搜索换源并同步收藏')),
               const PopupMenuItem(value: 'rename', child: Text('修改歌曲名称')),
               const PopupMenuItem(value: 'original', child: Text('查看原视频')),

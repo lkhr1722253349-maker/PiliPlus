@@ -57,6 +57,9 @@ class ListeningController extends GetxController {
   int _trafficSession = 0;
   int _lyricsRequest = 0;
   String? _lyricsIdentity;
+  String? _lyricsDurationRetry;
+  /// Creates the lyric/translation service. Tests replace it with a stub.
+  ListeningLyrics Function() newLyrics = ListeningLyrics.new;
   void applyLyricsSettings(LyricTrack track, Duration offset) {
     _lyricsRequest++;
     lyricsLoading.value = false;
@@ -101,26 +104,66 @@ class ListeningController extends GetxController {
     }
   }
 
+  /// Loads everything that belongs to the newly played song instead of the
+  /// audio stream: three lines of lyrics, the offset, the Chinese name and
+  /// (for a raw video title) the recognised song name. Every step catches its
+  /// own failure, so playback never waits on or is broken by metadata.
+  Future<void> prepareSongMetadata(ListeningSong song) async {
+    try {
+      await loadCurrentLyrics();
+    } catch (_) {
+      /* The compact view keeps whatever lyrics are already loaded. */
+    }
+    if (!identical(current.value, song)) return;
+    try {
+      await translateCurrentSongName();
+    } catch (_) {
+      /* Retried by the next refresh; failures are never cached. */
+    }
+    if (!identical(current.value, song)) return;
+    if (song.nameEdited || song.namedSource != null) return;
+    // A name that is still the raw video title is replaced by the consensus
+    // of other videos of the same song, with a marker that keeps the search
+    // from running on every play.
+    try {
+      final renamed = (await _recognizeOnce(song)).$2;
+      if (renamed) unawaited(translateSongNames());
+    } catch (_) {
+      /* Retried on the next refresh; recognition is best effort. */
+    }
+  }
+
   Future<void> loadCurrentLyrics() async {
     final song = current.value;
     final request = ++_lyricsRequest;
-    activeLyrics.value = null;
-    if (song == null) return;
-    _lyricsIdentity = '${song.source.key}:${song.name}';
+    if (song == null) {
+      _lyricsIdentity = null;
+      activeLyrics.value = null;
+      lyricsLoading.value = false;
+      return;
+    }
+    final identity = '${song.source.key}:${song.name}';
+    // Switching songs must not show the previous song's lines, but reloading
+    // the same song keeps the current lines visible while refreshing.
+    if (_lyricsIdentity != identity) {
+      _lyricsIdentity = identity;
+      activeLyrics.value = null;
+    }
     lyricsOffset.value = Duration(
       milliseconds: GStorage.localCache.get(
         'listeningLyricsOffset:${song.source.key}',
         defaultValue: 0,
       ),
     );
-    final service = ListeningLyrics();
-    final cached = service.saved(song);
-    activeLyrics.value = cached?.priority == 0
-        ? cached
-        : service.saved(song, translation: true) ?? cached;
-    lyricsLoading.value = true;
+    final service = newLyrics();
     final name = song.name;
     try {
+      final cached = service.saved(song);
+      final translation = service.saved(song, translation: true);
+      final initial = cached?.priority == 0 ? cached : translation ?? cached;
+      if (initial != null && activeLyrics.value == null)
+        activeLyrics.value = initial;
+      lyricsLoading.value = true;
       final snapshot = ListeningSong(
         id: song.id,
         name: name,
@@ -134,58 +177,101 @@ class ListeningController extends GetxController {
       if (request == _lyricsRequest &&
           identical(current.value, song) &&
           song.name == name)
-        activeLyrics.value = track;
+        activeLyrics.value = track ?? initial;
     } catch (_) {
       /* Keep the cached lyrics when a service is unavailable. */
     } finally {
       service.close();
-      if (request == _lyricsRequest) lyricsLoading.value = false;
+      if (request == _lyricsRequest) {
+        lyricsLoading.value = false;
+        // The first search often runs before the player reports a duration,
+        // which is required to reject same-name covers. Retry once afterwards.
+        if (duration.value > Duration.zero) _lyricsDurationRetry = identity;
+      }
     }
+  }
+
+  /// Re-runs the automatic lyric match once the real audio duration is known.
+  void _retryLyricsForDuration(Duration value) {
+    if (value <= Duration.zero) return;
+    final song = current.value;
+    if (song == null || lyricsLoading.value) return;
+    final identity = '${song.source.key}:${song.name}';
+    if (_lyricsIdentity != identity || _lyricsDurationRetry == identity) return;
+    _lyricsDurationRetry = identity;
+    if (activeLyrics.value?.priority == 0) return;
+    unawaited(loadCurrentLyrics());
   }
 
   bool _translatingNames = false;
   bool _translationPending = false;
-  Future<void> translateSongNames() async {
+  Future<void> translateSongNames({ListeningLyrics? service}) async {
     if (_translatingNames) {
       _translationPending = true;
       return;
     }
     _translatingNames = true;
-    final service = ListeningLyrics();
+    final lyrics = service ?? newLyrics();
+    var quota = false;
     try {
       for (final list in playlists.toList()) {
         for (final song in list.songs.toList()) {
+          if (quota) break;
           final name = song.name;
-          final language =
-              ListeningLyrics.nameLanguage(
-                name,
-                context: '${song.source.title} ${song.original.title}',
-              ) ??
-              'autodetect';
           if (song.translatedNameSource == name) continue;
+          final context = '${song.source.title} ${song.original.title}';
+          if (ListeningLyrics.nameLanguage(name, context: context) == null)
+            continue;
           try {
-            final translated = await service.translateLine(name, language);
+            final translated = await lyrics.translateName(
+              name,
+              context: context,
+            );
             if (song.name != name || !list.songs.contains(song)) continue;
             song.translatedNameSource = name;
-            song.chineseName =
-                translated != name &&
-                    RegExp(r'[\u3400-\u9fff]').hasMatch(translated)
-                ? translated
-                : null;
+            song.chineseName = translated;
             await save();
-          } catch (error) {
-            if ('$error'.contains('额度不足') || '$error'.contains('429')) break;
+          } on LyricsTranslationException catch (error) {
+            // Only an exhausted quota stops the queue; a single unavailable
+            // name must not block every remaining song.
+            if (error.quota) quota = true;
+            continue;
+          } catch (_) {
             continue;
           }
         }
       }
     } finally {
-      service.close();
+      lyrics.close();
       _translatingNames = false;
       if (_translationPending) {
         _translationPending = false;
         unawaited(translateSongNames());
       }
+    }
+  }
+
+  /// Translates just the song that is playing, so its notification title and
+  /// the three-line lyrics header pick up the Chinese name without waiting for
+  /// a full playlist scan.
+  Future<void> translateCurrentSongName({ListeningLyrics? service}) async {
+    final song = current.value;
+    if (song == null) return;
+    final name = song.name;
+    if (song.translatedNameSource == name) return;
+    final context = '${song.source.title} ${song.original.title}';
+    if (ListeningLyrics.nameLanguage(name, context: context) == null) return;
+    final lyrics = service ?? newLyrics();
+    try {
+      final translated = await lyrics.translateName(name, context: context);
+      if (song.name != name) return;
+      song.translatedNameSource = name;
+      song.chineseName = translated;
+      await save();
+    } catch (_) {
+      /* Retried on the next refresh; failures are never cached. */
+    } finally {
+      lyrics.close();
     }
   }
 
@@ -222,6 +308,9 @@ class ListeningController extends GetxController {
                 !list.songs.contains(song))
               continue;
             if (name != null) song.name = name;
+            // Remember that the tag was read: a missing BGM tag must not
+            // trigger a metadata request on every refresh, and a song without
+            // a tag keeps its title for the search based recognition pass.
             song.namedSource = source.key;
             await save();
           } catch (_) {
@@ -235,9 +324,99 @@ class ListeningController extends GetxController {
         _namingPending = false;
         unawaited(refreshSongNames());
       } else {
+        unawaited(recognizeSongNames());
         unawaited(translateSongNames());
       }
     }
+  }
+
+  bool _recognizing = false;
+  bool _recognizePending = false;
+  /// Applies a name inferred from the titles of the same song's other videos.
+  /// Recognition only ever replaces the local display name: the original
+  /// bvid/cid/page/title are kept, and manual names are never overwritten.
+  Future<bool> recognizeSongName(ListeningSong song) async {
+    final sourceKey = song.source.key;
+    if (song.nameEdited || song.source.cid == 0) return false;
+    try {
+      final items = await search(song.name, 1);
+      final unique = <String, String>{};
+      for (final item in items) {
+        final bvid = item.bvid;
+        if (bvid != null && bvid.isNotEmpty) unique[bvid] = item.title;
+      }
+      final consensus = inferSongName(unique.values);
+      if (consensus == null) return false;
+      return applySearchSongName(song, sourceKey, consensus);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Lets the page show what automatic recognition changed. It stays a
+  /// callback so the controller never touches UI state on its own.
+  void Function(String message)? onNotice;
+  void _notice(String message) {
+    try {
+      onNotice?.call(message);
+    } catch (_) {
+      /* A missing UI must not break the metadata pipeline. */
+    }
+  }
+
+  /// Recognises names for songs that still use a raw video title, e.g. after
+  /// an import. Runs in the background so the page stays responsive.
+  Future<void> recognizeSongNames({int limit = 3}) async {
+    if (_recognizing) {
+      _recognizePending = true;
+      return;
+    }
+    _recognizing = true;
+    var searched = 0;
+    var renamed = 0;
+    try {
+      for (final list in playlists.toList()) {
+        for (final song in list.songs.toList()) {
+          if (searched >= limit) break;
+          final result = await _recognizeOnce(song);
+          if (!result.$1) continue;
+          searched++;
+          if (result.$2) renamed++;
+        }
+      }
+    } finally {
+      _recognizing = false;
+      if (renamed > 0) {
+        _notice('已按同名视频自动识别 $renamed 首歌名');
+        unawaited(translateSongNames());
+      }
+      if (_recognizePending) {
+        _recognizePending = false;
+        unawaited(recognizeSongNames(limit: limit));
+      }
+    }
+  }
+
+  /// One guarded recognition attempt; the marker keeps a song from being
+  /// re-searched on every play or refresh.
+  /// Returns `(attempted, renamed)`.
+  Future<(bool, bool)> _recognizeOnce(ListeningSong song) async {
+    final source = song.source;
+    if (song.nameEdited || source.cid == 0) return (false, false);
+    // Only songs whose name is still the untouched video title need it.
+    if (song.namedSource != null &&
+        song.name != source.title &&
+        song.name != song.original.title)
+      return (false, false);
+    final marker = 'listeningNameSearch:${source.key}';
+    if (GStorage.localCache.get(marker) == song.name) return (false, false);
+    final before = song.name;
+    try {
+      await recognizeSongName(song);
+    } finally {
+      await GStorage.localCache.put(marker, song.name);
+    }
+    return (true, song.name != before);
   }
 
   String? _openError;
@@ -269,9 +448,9 @@ class ListeningController extends GetxController {
     current.refresh();
     final song = current.value;
     final item = videoPlayerServiceHandler?.mediaItem.value;
-    if (_ownsMediaSession &&
-        song != null &&
-        _lyricsIdentity != '${song.source.key}:${song.name}') {
+    // A renamed or re-recognised song must re-run the lyric search even when
+    // the media session belongs to another page.
+    if (song != null && _lyricsIdentity != '${song.source.key}:${song.name}') {
       unawaited(loadCurrentLyrics());
     }
     if (_ownsMediaSession &&
@@ -464,6 +643,7 @@ class ListeningController extends GetxController {
       }),
       player.stream.duration.listen((value) {
         duration.value = value;
+        _retryLyricsForDuration(value);
       }),
       player.stream.playing.listen((value) {
         playing.value = value;
@@ -565,6 +745,10 @@ class ListeningController extends GetxController {
     if (request != _request) return;
     current.value = song;
     if (attempt == 0) {
+      // Lyrics and the Chinese name belong to the song, not to the audio
+      // stream: load them right away so a slow or failing stream never leaves
+      // the three-line lyrics and the notification title stale.
+      unawaited(prepareSongMetadata(song));
       _trafficSession++;
       _receivedMobileBytes = 0;
       mobileBytes.value = 0;
@@ -666,7 +850,6 @@ class ListeningController extends GetxController {
         return;
       }
       _audioProxy = proxy;
-      unawaited(loadCurrentLyrics());
       _openError = null;
       await player.open(Media(proxy.url));
       if (_openError != null) throw StateError(_openError!);
