@@ -268,12 +268,15 @@ abstract final class Update {
     final directory = await getTemporaryDirectory();
     final output = File('${directory.path}/piliplus-update.apk');
     final patchFile = File('${directory.path}/piliplus-update.patch');
-    // Any patch built from the installed version applies, even when several
-    // releases were skipped: the delta is between the two APKs, not a chain.
+    // A patch applies to one exact installed version, so prefer the one built
+    // from this build's version code. When a device skipped many releases that
+    // patch may be outside the published delta window, in which case the full
+    // APK is used instead of guessing at a mismatched base.
     final patchName =
         'PiliPlus_android_from_${BuildConfig.versionCode}_$abi.patch';
-    final patches = assets.where((asset) => asset['name'] == patchName);
-    final patch = patches.isEmpty ? null : patches.first;
+    final patch = assets
+        .where((asset) => asset['name'] == patchName)
+        .firstOrNull;
     try {
       if (output.existsSync()) output.deleteSync();
       if (patch != null &&

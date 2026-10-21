@@ -122,52 +122,93 @@ jobs:
               env:
                   GH_TOKEN: ${{ github.token }}
                   CURRENT_TAG: ${{ github.event.inputs.tag }}
-                  # How many recent releases keep a delta base, so a device that
+                  # How many previous builds keep a delta base, so a device that
                   # skipped several versions can still update in one step.
                   DELTA_BASES: "5"
               shell: bash
               run: |
                   set -euo pipefail
-                  mapfile -t previous_tags < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-                    --jq ".[] | select(.tag_name != \"${CURRENT_TAG}\" and .draft == false) | .tag_name" \
-                    | head -n "${DELTA_BASES}")
-                  if (( ${#previous_tags[@]} == 0 )); then
-                    echo 'No previous fork release; this release establishes the delta base.'
-                    exit 0
-                  fi
                   sudo apt-get update -qq
                   sudo apt-get install -y bsdiff
                   new=$(find . -maxdepth 1 -name "PiliPlus_android_*_arm64-v8a.apk" -print -quit)
                   [[ -n "$new" ]] || { echo 'No new APK to diff against'; exit 0; }
+                  new_code=$(basename "$new" | sed -nE 's/.*\+([0-9]+)_arm64-v8a\.apk$/\1/p')
+                  echo "New build version code: ${new_code:-unknown}"
+
+                  # Collect candidate base APKs from the most recent builds. A
+                  # build can be reachable as a release asset or, once that
+                  # release is pruned, only as an Actions artifact; both are
+                  # tried so the delta window does not shrink when old releases
+                  # are cleaned up.
+                  rm -rf bases && mkdir -p bases
+                  declare -A seen_codes
+                  consider() {
+                    local file="$1" code
+                    code=$(basename "$file" | sed -nE 's/.*\+([0-9]+)_arm64-v8a\.apk$/\1/p')
+                    if [[ -z "$code" ]]; then
+                      echo "Skip $(basename "$file"): unparsable version code"
+                      return 0
+                    fi
+                    if [[ "$code" == "$new_code" ]]; then
+                      echo "Skip $(basename "$file"): same version code"
+                      return 0
+                    fi
+                    if [[ -n "${seen_codes[$code]:-}" ]]; then
+                      echo "Skip $(basename "$file"): code $code already collected"
+                      return 0
+                    fi
+                    seen_codes[$code]=1
+                    cp "$file" "bases/${code}_arm64-v8a.apk"
+                    echo "Collected base $code from $(basename "$file")"
+                  }
+
+                  mapfile -t previous_tags < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+                    --jq ".[] | select(.tag_name != \"${CURRENT_TAG}\" and .draft == false) | .tag_name" \
+                    | head -n "${DELTA_BASES}")
                   for previous_tag in "${previous_tags[@]}"; do
-                    rm -rf previous
-                    mkdir -p previous
-                    if ! gh release download "$previous_tag" --pattern 'PiliPlus_android_*_arm64-v8a.apk' --dir previous 2>/dev/null; then
-                      echo "Skip ${previous_tag}: no downloadable APK"
-                      continue
-                    fi
-                    old=$(find previous -maxdepth 1 -name "PiliPlus_android_*_arm64-v8a.apk" -print -quit)
-                    [[ -n "$old" ]] || continue
-                    if [[ "$(basename "$old")" =~ \+([0-9]+)_arm64-v8a\.apk$ ]]; then
-                      old_code="${BASH_REMATCH[1]}"
+                    rm -rf previous && mkdir -p previous
+                    if gh release download "$previous_tag" --pattern 'PiliPlus_android_*_arm64-v8a.apk' --dir previous 2>/dev/null; then
+                      while IFS= read -r -d '' f; do consider "$f"; done < <(find previous -name 'PiliPlus_android_*_arm64-v8a.apk' -print0)
                     else
-                      echo "Skip ${previous_tag}: unparsable version code"
-                      continue
+                      echo "No release asset in ${previous_tag}; will try artifacts"
                     fi
+                  done
+
+                  # Artifacts survive release pruning and cover builds that were
+                  # never published, so they fill the rest of the delta window.
+                  mapfile -t artifact_ids < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" \
+                    --jq '.artifacts[] | select(.expired == false) | select(.name | test("PiliPlus_android_.*_arm64-v8a\\.apk$")) | .id' \
+                    | head -n "${DELTA_BASES}")
+                  for artifact_id in "${artifact_ids[@]}"; do
+                    if (( ${#seen_codes[@]} >= DELTA_BASES )); then break; fi
+                    rm -rf artifact && mkdir -p artifact
+                    if gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > artifact/a.zip 2>/dev/null; then
+                      if unzip -q -o artifact/a.zip -d artifact >/dev/null 2>&1; then
+                        while IFS= read -r -d '' f; do consider "$f"; done < <(find artifact -name 'PiliPlus_android_*_arm64-v8a.apk' -print0)
+                      else
+                        echo "Skip artifact ${artifact_id}: not a readable zip"
+                      fi
+                    fi
+                  done
+
+                  if (( ${#seen_codes[@]} == 0 )); then
+                    echo 'No base APK available; this release establishes the delta base.'
+                    exit 0
+                  fi
+
+                  shopt -s nullglob
+                  for base in bases/*_arm64-v8a.apk; do
+                    old_code=$(basename "$base" | sed -nE 's/^([0-9]+)_arm64-v8a\.apk$/\1/p')
                     patch="PiliPlus_android_from_${old_code}_arm64-v8a.patch"
-                    if [[ -e "$patch" ]]; then
-                      echo "Skip ${previous_tag}: patch for ${old_code} already built"
-                      continue
-                    fi
-                    bsdiff "$old" "$new" "$patch"
-                    bspatch "$old" "reconstructed.apk" "$patch"
+                    bsdiff "$base" "$new" "$patch"
+                    bspatch "$base" "reconstructed.apk" "$patch"
                     cmp "$new" "reconstructed.apk"
-                    rm "reconstructed.apk"
+                    rm -f "reconstructed.apk"
                     if (( $(stat -c%s "$patch") * 10 >= $(stat -c%s "$new") * 8 )); then
                       echo "Drop ${patch}: not smaller than the full APK"
-                      rm "$patch"
+                      rm -f "$patch"
                     else
-                      echo "Built ${patch} from ${previous_tag}"
+                      echo "Built ${patch} from version code ${old_code}"
                     fi
                   done
 
@@ -221,6 +262,9 @@ jobs:
                   archive: false
                   name: Android_arm64-v8a
                   path: PiliPlus_android_*_arm64-v8a.apk
+                  # Keep each APK long enough to serve as a delta base after its
+                  # release has been pruned from the release list.
+                  retention-days: 90
 
     ios:
         if: ${{ (github.event_name == 'pull_request' && github.repository == 'bggRGjQaUbCoE/PiliPlus') || github.event.inputs.build_ios == 'true' }}
