@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show File, Platform;
 
 import 'package:PiliPlus/build_config.dart';
@@ -192,6 +193,72 @@ abstract final class Update {
     }
   }
 
+  /// Downloads with a visible progress dialog. [label] is shown above the
+  /// percentage and [total] may be 0 when the server sends no length.
+  static Future<void> _download(
+    String url,
+    String path,
+    String label, {
+    int total = 0,
+  }) async {
+    var received = 0;
+    var expected = total;
+    var lastPercent = -2;
+    var lastUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+
+    Future<void> show({bool force = false}) async {
+      final percent = expected > 0
+          ? (received * 100 / expected).clamp(0, 100).toInt()
+          : -1;
+      if (!force && percent == lastPercent) return;
+      final now = DateTime.now();
+      if (!force && now.difference(lastUpdate).inMilliseconds < 120) return;
+      lastPercent = percent;
+      lastUpdate = now;
+      final size = _formatBytes(received);
+      await SmartDialog.showLoading(
+        msg: label,
+        builder: (context) => AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label),
+              const SizedBox(height: 12),
+              LinearProgressIndicator(
+                value: percent >= 0 ? percent / 100 : null,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                expected > 0
+                    ? '$percent% · $size / ${_formatBytes(expected)}'
+                    : size,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    await show(force: true);
+    await Dio().download(
+      url,
+      path,
+      onReceiveProgress: (count, totalBytes) {
+        received = count;
+        if (totalBytes > 0) expected = totalBytes;
+        unawaited(show());
+      },
+    );
+  }
+
+  static String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
   static Future<void> _installAndroidUpdate(
     List<Map<String, dynamic>> assets,
     Map<String, dynamic> apk,
@@ -201,11 +268,12 @@ abstract final class Update {
     final directory = await getTemporaryDirectory();
     final output = File('${directory.path}/piliplus-update.apk');
     final patchFile = File('${directory.path}/piliplus-update.patch');
+    // Any patch built from the installed version applies, even when several
+    // releases were skipped: the delta is between the two APKs, not a chain.
     final patchName =
         'PiliPlus_android_from_${BuildConfig.versionCode}_$abi.patch';
     final patches = assets.where((asset) => asset['name'] == patchName);
     final patch = patches.isEmpty ? null : patches.first;
-    SmartDialog.showLoading(msg: '正在下载更新');
     try {
       if (output.existsSync()) output.deleteSync();
       if (patch != null &&
@@ -215,8 +283,13 @@ abstract final class Update {
             'installedApkPath',
           );
           if (oldPath == null) throw StateError('Installed APK unavailable');
-          await Dio().download(patch['browser_download_url'], patchFile.path);
-          SmartDialog.showLoading(msg: '正在校验并合成安装包');
+          await _download(
+            '${patch['browser_download_url']}',
+            patchFile.path,
+            '正在下载差分包',
+            total: (patch['size'] as num?)?.toInt() ?? 0,
+          );
+          await SmartDialog.showLoading(msg: '正在校验并合成安装包');
           await BsPatch.patch(
             oldFile: oldPath,
             patchFile: patchFile.path,
@@ -229,10 +302,15 @@ abstract final class Update {
         }
       }
       if (!output.existsSync()) {
-        SmartDialog.showLoading(msg: '正在下载完整安装包');
-        await Dio().download(apk['browser_download_url'], output.path);
+        await _download(
+          '${apk['browser_download_url']}',
+          output.path,
+          '正在下载完整安装包',
+          total: (apk['size'] as num?)?.toInt() ?? 0,
+        );
         await _verifyApk(output, apk);
       }
+      await SmartDialog.showLoading(msg: '正在安装');
       await channel.invokeMethod<void>('installApk', {'path': output.path});
     } finally {
       SmartDialog.dismiss();

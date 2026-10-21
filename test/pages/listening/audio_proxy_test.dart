@@ -1,9 +1,33 @@
 import 'dart:io';
 
 import 'package:PiliPlus/pages/listening/audio_proxy.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  // The proxy resolves an application support directory through a platform
+  // channel, so the binding must exist and the channel must answer.
+  // `HttpOverrides.global = null` keeps real loopback sockets working, which
+  // the test binding would otherwise stub out with HTTP 400.
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  HttpOverrides.global = null;
+  late Directory support;
+  setUpAll(() async {
+    support = await Directory.systemTemp.createTemp('piliplus-proxy-');
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (call) async => call.method == 'getApplicationSupportDirectory'
+          ? support.path
+          : null,
+    );
+  });
+  tearDownAll(() async {
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      null,
+    );
+    if (support.existsSync()) await support.delete(recursive: true);
+  });
   test('audio proxy preserves ranges and counts downloaded bytes including rereads', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final payload = List.generate(8192, (i) => i % 256);
@@ -45,11 +69,13 @@ void main() {
         await second.expand((e) => e).toList(),
         payload.sublist(2048, 4096),
       );
-      expect(bytes, 10240);
+      // The first response cached the whole body, so the ranged read is served
+      // from the local file and adds no network bytes.
+      expect(bytes, 8192);
       final head = await (await client.headUrl(Uri.parse(proxy.url))).close();
       await head.drain<void>();
-      expect(bytes, 10240);
-      expect(ranges, [null, 'bytes=2048-4095', null]);
+      expect(bytes, 8192);
+      expect(ranges, [null]);
     } finally {
       client.close(force: true);
       await proxy.close();

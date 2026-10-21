@@ -122,34 +122,52 @@ jobs:
               env:
                   GH_TOKEN: ${{ github.token }}
                   CURRENT_TAG: ${{ github.event.inputs.tag }}
+                  # How many recent releases keep a delta base, so a device that
+                  # skipped several versions can still update in one step.
+                  DELTA_BASES: "5"
               shell: bash
               run: |
                   set -euo pipefail
-                  previous_tag=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=20" --jq ".[] | select(.tag_name != \"${CURRENT_TAG}\" and .draft == false) | .tag_name" | head -n 1)
-                  if [[ -z "$previous_tag" ]]; then
+                  mapfile -t previous_tags < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+                    --jq ".[] | select(.tag_name != \"${CURRENT_TAG}\" and .draft == false) | .tag_name" \
+                    | head -n "${DELTA_BASES}")
+                  if (( ${#previous_tags[@]} == 0 )); then
                     echo 'No previous fork release; this release establishes the delta base.'
                     exit 0
                   fi
-                  mkdir -p previous
-                  gh release download "$previous_tag" --pattern 'PiliPlus_android_*_*.apk' --dir previous
                   sudo apt-get update -qq
                   sudo apt-get install -y bsdiff
-                  for abi in arm64-v8a; do
-                    old=$(find previous -maxdepth 1 -name "PiliPlus_android_*_${abi}.apk" -print -quit)
-                    new=$(find . -maxdepth 1 -name "PiliPlus_android_*_${abi}.apk" -print -quit)
-                    [[ -n "$old" && -n "$new" ]] || continue
-                    if [[ "$(basename "$old")" =~ \+([0-9]+)_${abi}\.apk$ ]]; then
-                      old_code="${BASH_REMATCH[1]}"
-                    else
+                  new=$(find . -maxdepth 1 -name "PiliPlus_android_*_arm64-v8a.apk" -print -quit)
+                  [[ -n "$new" ]] || { echo 'No new APK to diff against'; exit 0; }
+                  for previous_tag in "${previous_tags[@]}"; do
+                    rm -rf previous
+                    mkdir -p previous
+                    if ! gh release download "$previous_tag" --pattern 'PiliPlus_android_*_arm64-v8a.apk' --dir previous 2>/dev/null; then
+                      echo "Skip ${previous_tag}: no downloadable APK"
                       continue
                     fi
-                    patch="PiliPlus_android_from_${old_code}_${abi}.patch"
+                    old=$(find previous -maxdepth 1 -name "PiliPlus_android_*_arm64-v8a.apk" -print -quit)
+                    [[ -n "$old" ]] || continue
+                    if [[ "$(basename "$old")" =~ \+([0-9]+)_arm64-v8a\.apk$ ]]; then
+                      old_code="${BASH_REMATCH[1]}"
+                    else
+                      echo "Skip ${previous_tag}: unparsable version code"
+                      continue
+                    fi
+                    patch="PiliPlus_android_from_${old_code}_arm64-v8a.patch"
+                    if [[ -e "$patch" ]]; then
+                      echo "Skip ${previous_tag}: patch for ${old_code} already built"
+                      continue
+                    fi
                     bsdiff "$old" "$new" "$patch"
-                    bspatch "$old" "reconstructed_${abi}.apk" "$patch"
-                    cmp "$new" "reconstructed_${abi}.apk"
-                    rm "reconstructed_${abi}.apk"
+                    bspatch "$old" "reconstructed.apk" "$patch"
+                    cmp "$new" "reconstructed.apk"
+                    rm "reconstructed.apk"
                     if (( $(stat -c%s "$patch") * 10 >= $(stat -c%s "$new") * 8 )); then
+                      echo "Drop ${patch}: not smaller than the full APK"
                       rm "$patch"
+                    else
+                      echo "Built ${patch} from ${previous_tag}"
                     fi
                   done
 
@@ -180,18 +198,22 @@ jobs:
               env:
                   GH_TOKEN: ${{ github.token }}
                   CURRENT_TAG: ${{ github.event.inputs.tag }}
+                  # Keep the recent releases that still provide a delta base for
+                  # devices that skipped versions. Must match DELTA_BASES above.
+                  KEEP_RELEASES: "6"
               shell: bash
               run: |
                   set -euo pipefail
                   # Fail fast: never delete the base release if this release is missing.
                   gh release view "$CURRENT_TAG" >/dev/null
                   mapfile -t tags < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[] | select(.draft == false) | .tag_name')
+                  kept=0
                   for t in "${tags[@]}"; do
-                    [[ "$t" == "$CURRENT_TAG" ]] && continue
-                    echo "Removing older release $t (the new delta patch replaces it)"
+                    (( kept++ < KEEP_RELEASES )) && { echo "Keeping $t"; continue; }
+                    echo "Removing older release $t (outside the delta window)"
                     gh release delete "$t" --yes --cleanup-tag
                   done
-                  echo "Remaining release: $CURRENT_TAG"
+                  echo "Kept the newest ${KEEP_RELEASES} releases including ${CURRENT_TAG}"
 
             - name: 上传
               uses: actions/upload-artifact@v7

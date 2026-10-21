@@ -588,16 +588,48 @@ class ListeningLyrics {
       sha256.convert(utf8.encode(text)).toString();
   static String sourceKey(ListeningSong song) =>
       key('${song.source.key}:${song.name}');
+  /// Traditional-only characters that have no simplified form in common use.
+  /// A name written with these is Chinese, not Japanese kanji, so it must not
+  /// be sent for translation: the target language is already Chinese.
+  static const _traditionalOnly =
+      '們個來時說會為對這過還開關點電發現實學體國東車長門間問無與萬樣種'
+      '麼兒將應該當經給還邊變讓認識語讀寫聽講話誰歡樂聲愛氣義處務員'
+      '標準備結束繼續練習習慣感覺憶願擁抱護選擇單雙號碼稱讚賞顏'
+      '麗雲飛風飄點燈熱鬧靜歲豐農曆藝術戲劇團隊營營養師';
+
+  /// Simplified-only characters: their presence means the text is already in
+  /// the target script, so no translation is needed either.
+  static const _simplifiedOnly =
+      '们个来时说会为对这过还开关点电发现实学体国东车长门间问无与万样种'
+      '么儿将应该当经给边变让认识语读写听讲话谁欢乐声爱气义处务员'
+      '标准备结束继续练习习惯感觉忆愿拥抱护选择单双号码称赞赏颜'
+      '丽云飞风飘点灯热闹静岁丰农历艺术戏剧团队营营养师';
+
+  /// True when the text is Chinese (simplified or traditional) and therefore
+  /// needs no Chinese translation.
+  static bool isChinese(String text) {
+    if (!RegExp(r'[\u3400-\u9fff]').hasMatch(text)) return false;
+    if (RegExp(r'[\u3040-\u30ff\uac00-\ud7af]').hasMatch(text)) return false;
+    if (_traditionalOnly.split('').any(text.contains)) return true;
+    if (_simplifiedOnly.split('').any(text.contains)) return true;
+    // Han-only text without kana/hangul is treated as Chinese unless the
+    // caller supplies Japanese context (see [nameLanguage]).
+    return true;
+  }
+
   static String? nameLanguage(String name, {String context = ''}) {
     if (RegExp(r'[\u3040-\u30ff]').hasMatch(name)) return 'ja';
     if (RegExp(r'[\uac00-\ud7af]').hasMatch(name)) return 'ko';
-    // Kanji-only Japanese titles need language context from the source video.
-    if (RegExp(r'[\u3400-\u9fff]').hasMatch(name) &&
-        RegExp(r'[\u3040-\u30ff]').hasMatch(context))
-      return 'ja';
-    if (!RegExp(r'[\u3400-\u9fff]').hasMatch(name) &&
-        RegExp('[a-zA-Z]').hasMatch(name))
-      return 'en';
+    // Kanji-only Japanese titles need language context from the source video,
+    // but a name that is clearly Chinese (traditional or simplified) must not
+    // be translated just because the video has Japanese tags.
+    if (RegExp(r'[\u3400-\u9fff]').hasMatch(name)) {
+      if (_traditionalOnly.split('').any(name.contains)) return null;
+      if (_simplifiedOnly.split('').any(name.contains)) return null;
+      if (RegExp(r'[\u3040-\u30ff]').hasMatch(context)) return 'ja';
+      return null;
+    }
+    if (RegExp('[a-zA-Z]').hasMatch(name)) return 'en';
     return null;
   }
 
