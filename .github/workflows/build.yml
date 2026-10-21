@@ -158,6 +158,10 @@ jobs:
               uses: softprops/action-gh-release@v3
               with:
                   tag_name: ${{ github.event.inputs.tag }}
+                  # Without an explicit target the tag is created on the default
+                  # branch, which points at a different commit than the one this
+                  # run built. Pin it to the commit that was actually checked out.
+                  target_commitish: ${{ github.sha }}
                   name: ${{ github.event.inputs.tag }}
                   body: |
                       PiliPlus 二次开发版本，非原项目官方发布。

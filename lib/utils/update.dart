@@ -20,6 +20,35 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 
 abstract final class Update {
+  /// Whether a GitHub release is newer than this build.
+  ///
+  /// A release is newer when its tag names a different version, or when it was
+  /// published after this build. `published_at` is used because `created_at`
+  /// is the tag's commit time: publishing a tag that points at an older commit
+  /// (or at another branch) would otherwise look "older" than the installed
+  /// build and the update would never be offered.
+  static bool isNewer({
+    required String tagName,
+    required String? publishedAt,
+    required String? createdAt,
+    required String installedVersion,
+    required int installedBuildTime,
+  }) {
+    String numeric(String value) =>
+        value.split('-').first.split('+').first.trim().replaceFirst(
+          RegExp(r'^[vV]'),
+          '',
+        );
+    final tag = numeric(tagName);
+    final installed = numeric(installedVersion);
+    if (tag.isNotEmpty && installed.isNotEmpty && tag != installed) return true;
+    final stamp = publishedAt ?? createdAt;
+    if (stamp == null) return false;
+    final latest = DateTime.tryParse(stamp)?.millisecondsSinceEpoch;
+    if (latest == null) return false;
+    return installedBuildTime < latest ~/ 1000;
+  }
+
   // 检查更新
   static Future<void> checkUpdate([bool isAuto = true]) async {
     if (kDebugMode) return;
@@ -39,9 +68,14 @@ abstract final class Update {
         return;
       }
       final data = res.data[0];
-      final int latest =
-          DateTime.parse(data['created_at']).millisecondsSinceEpoch ~/ 1000;
-      if (BuildConfig.buildTime >= latest) {
+      final newer = isNewer(
+        tagName: '${data['tag_name'] ?? ''}',
+        publishedAt: data['published_at'] as String?,
+        createdAt: data['created_at'] as String?,
+        installedVersion: BuildConfig.versionName,
+        installedBuildTime: BuildConfig.buildTime,
+      );
+      if (!newer) {
         if (!isAuto) {
           SmartDialog.showToast('已是最新版本');
         }

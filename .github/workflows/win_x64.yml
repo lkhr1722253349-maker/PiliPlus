@@ -78,6 +78,8 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.inputs.tag }}
+          # Pin the tag to the commit this run built instead of the default branch.
+          target_commitish: ${{ github.sha }}
           name: ${{ github.event.inputs.tag }}
           files: |
             PiliPlus_windows_*.zip
