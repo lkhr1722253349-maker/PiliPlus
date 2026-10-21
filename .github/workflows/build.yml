@@ -185,14 +185,17 @@ jobs:
                   for artifact_id in "${artifact_ids[@]:-}"; do
                     if (( ${#seen_codes[@]} >= DELTA_BASES )); then break; fi
                     rm -rf artifact && mkdir -p artifact
-                    # `gh api -o` writes the zip to a file; piping binary
-                    # through stdout is not reliable.
-                    if ! gh api -o artifact/a.zip "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" 2>/dev/null; then
+                    # The artifact zip is served from a redirect; fetch it with
+                    # curl -L so the 302 to blob storage is followed.
+                    zip_url="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip"
+                    if ! curl -sSL -H "Authorization: Bearer ${GH_TOKEN}" \
+                        -H "Accept: application/vnd.github+json" \
+                        -o artifact/a.zip "$zip_url"; then
                       echo "Skip artifact ${artifact_id}: download failed"
                       continue
                     fi
                     if ! unzip -q -o artifact/a.zip -d artifact >/dev/null 2>&1; then
-                      echo "Skip artifact ${artifact_id}: not a readable zip"
+                      echo "Skip artifact ${artifact_id}: not a readable zip ($(stat -c%s artifact/a.zip 2>/dev/null || echo 0) bytes)"
                       continue
                     fi
                     while IFS= read -r -d '' f; do consider "$f"; done < <(find artifact -name 'PiliPlus_android_*_arm64-v8a.apk' -print0)
