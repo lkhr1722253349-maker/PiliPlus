@@ -6255,10 +6255,10 @@ index 0000000000000000000000000000000000000000..f32dd5e65483e656331e8ca5c404aca1
 +}
 diff --git a/test/pages/listening/lyrics_view_test.dart b/test/pages/listening/lyrics_view_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..af41ae4692131cea112a86047575975b4a56fdf4
+index 0000000000000000000000000000000000000000..cb74e4e2956407fafbc87acc6d8a73420d275941
 --- /dev/null
 +++ b/test/pages/listening/lyrics_view_test.dart
-@@ -0,0 +1,107 @@
+@@ -0,0 +1,108 @@
 +import 'dart:io';
 +
 +import 'package:PiliPlus/pages/listening/controller.dart';
@@ -6351,8 +6351,9 @@ index 0000000000000000000000000000000000000000..af41ae4692131cea112a86047575975b
 +        expect(dropdown.value?.priority, 0);
 +        expect(
 +          dropdown.items?.map((e) => e.value!.priority),
-+          containsAll([0, 1]),
++          orderedEquals([0]),
 +        );
++        expect(find.text('自动翻译并保存'), findsNothing);
 +        controller.position.value = const Duration(seconds: 2);
 +        await tester.pumpAndSettle();
 +        expect(
