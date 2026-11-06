@@ -1776,10 +1776,10 @@ index 0000000000000000000000000000000000000000..aaf11cf5f9d5ec1f00bed8b5c8536a49
 +}
 diff --git a/lib/pages/listening/lyrics.dart b/lib/pages/listening/lyrics.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..a61b246935ca62e94cc0b72d7fba6d27705cf199
+index 0000000000000000000000000000000000000000..009831559a764007109d6238e26c2f9271461bf3
 --- /dev/null
 +++ b/lib/pages/listening/lyrics.dart
-@@ -0,0 +1,646 @@
+@@ -0,0 +1,637 @@
 +import 'dart:convert';
 +
 +import 'package:PiliPlus/http/loading_state.dart';
@@ -1787,6 +1787,7 @@ index 0000000000000000000000000000000000000000..a61b246935ca62e94cc0b72d7fba6d27
 +import 'package:PiliPlus/http/user.dart';
 +import 'package:PiliPlus/models_new/video/video_tag/data.dart';
 +import 'package:PiliPlus/pages/listening/models.dart';
++import 'package:PiliPlus/pages/listening/netease.dart';
 +import 'package:PiliPlus/utils/storage.dart';
 +import 'package:crypto/crypto.dart';
 +import 'package:dio/dio.dart';
@@ -2047,20 +2048,13 @@ index 0000000000000000000000000000000000000000..a61b246935ca62e94cc0b72d7fba6d27
 +
 +  Future<List<LyricCandidate>> _searchMusic(String name) async {
 +    try {
-+      final response = await _music.get(
-+        '/api/search/get',
-+        queryParameters: {'s': name, 'type': 1, 'limit': 10},
-+      );
-+      final data = response.data is String
-+          ? jsonDecode(response.data)
-+          : response.data;
-+      final songs = (data['result']?['songs'] as List? ?? []).whereType<Map>();
++      final songs = await NeteaseClient.search(name, client: _music);
 +      final found = await Future.wait(
 +        songs.map((song) async {
 +          try {
 +            final response = await _music.get(
 +              '/api/song/lyric',
-+              queryParameters: {'id': song['id'], 'lv': -1, 'tv': -1},
++              queryParameters: {'id': song.id, 'lv': -1, 'tv': -1},
 +            );
 +            final lyrics = response.data is String
 +                ? jsonDecode(response.data)
@@ -2068,12 +2062,9 @@ index 0000000000000000000000000000000000000000..a61b246935ca62e94cc0b72d7fba6d27
 +            final text = lyrics['lrc']?['lyric'] as String? ?? '';
 +            if (lrcLines(text).isEmpty) return null;
 +            return LyricCandidate({
-+              'trackName': song['name'],
-+              'artistName': (song['artists'] as List? ?? [])
-+                  .whereType<Map>()
-+                  .map((e) => e['name'])
-+                  .join(' / '),
-+              'duration': ((song['duration'] as num? ?? 0) / 1000).round(),
++              'trackName': song.name,
++              'artistName': song.artists,
++              'duration': (song.durationMs / 1000).round(),
 +              'syncedLyrics': text,
 +              'translatedLyrics': lyrics['tlyric']?['lyric'] ?? '',
 +              'provider': '网易云音乐',
@@ -2917,7 +2908,7 @@ index 0000000000000000000000000000000000000000..835c90d22e759c0b1e48b8bdc541f4a6
 +}
 diff --git a/lib/pages/listening/netease.dart b/lib/pages/listening/netease.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..967de0333a9f32c93cd8c44845285f2ae47c5b6d
+index 0000000000000000000000000000000000000000..8282e9a0618ed3e19c06efc99d1678695ea52c17
 --- /dev/null
 +++ b/lib/pages/listening/netease.dart
 @@ -0,0 +1,356 @@
@@ -3128,9 +3119,9 @@ index 0000000000000000000000000000000000000000..967de0333a9f32c93cd8c44845285f2a
 +    ),
 +  );
 +
-+  static Future<List<NeteaseSong>> search(String name) async {
-+    final response = await _dio.get<dynamic>(
-+      '/api/search/get',
++  static Future<List<NeteaseSong>> search(String name, {Dio? client}) async {
++    final response = await (client ?? _dio).get<dynamic>(
++      '/api/cloudsearch/pc',
 +      queryParameters: {'s': name, 'type': 1, 'limit': 10},
 +    );
 +    final data = response.data is String
@@ -6684,7 +6675,7 @@ index 0000000000000000000000000000000000000000..62fede52d97a10315a5102e14a1c9b14
 +}
 diff --git a/test/pages/listening/network_lyrics_test.dart b/test/pages/listening/network_lyrics_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..a197dbf4247e3588c10e5fc948250b6e8098129b
+index 0000000000000000000000000000000000000000..665ef3843f159992b0ca8c1f605421cbebbae3c6
 --- /dev/null
 +++ b/test/pages/listening/network_lyrics_test.dart
 @@ -0,0 +1,187 @@
@@ -6751,15 +6742,15 @@ index 0000000000000000000000000000000000000000..a197dbf4247e3588c10e5fc948250b6e
 +              handler.resolve(
 +                Response(
 +                  requestOptions: options,
-+                  data: options.path.endsWith('/get')
++                  data: options.path == '/api/cloudsearch/pc'
 +                      ? {
 +                          'result': {
 +                            'songs': [
 +                              {
 +                                'id': 123,
 +                                'name': 'test song',
-+                                'duration': 60000,
-+                                'artists': [
++                                'dt': 60000,
++                                'ar': [
 +                                  {'name': 'Test artist'},
 +                                ],
 +                              },
