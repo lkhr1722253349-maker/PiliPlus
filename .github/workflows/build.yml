@@ -132,12 +132,13 @@ jobs:
                   lib/scripts/verify_apk.ps1 $apk.FullName
 
             - name: Rename
+              env:
+                  APK_VERSION: ${{ env.version }}
+              shell: pwsh
               run: |
-                  for file in build/app/outputs/flutter-apk/app-arm64-v8a-*.apk; do
-                    abi=$(echo "$file" | sed -E 's|.*app-(.*)-(release|debug)\.apk|\1|')
-                    mv "$file" "PiliPlus_android_${{ env.version }}_${abi}.apk"
-                  done
-              shell: bash
+                  $apk = @(Get-ChildItem build/app/outputs/flutter-apk -Filter 'app-arm64-v8a-*.apk')
+                  if ($apk.Count -ne 1) { throw 'Expected one arm64 APK' }
+                  Move-Item -LiteralPath $apk[0].FullName -Destination "PiliPlus_android_${env:APK_VERSION}_arm64-v8a.apk"
 
             - name: Create Android delta patches
               id: delta
