@@ -7638,6 +7638,18 @@ index 0000000000000000000000000000000000000000..6be168ae2cfd141e7fadd7844f9be457
 +    }
 +  });
 +}
+diff --git a/test/utils/accounts/deleted_account_test.dart b/test/utils/accounts/deleted_account_test.dart
+index a05cad0c7b217a6c7fbb6cf876d2cd9001c9a7a9..a0a1e695b6440eb0b3f6d15bcf1ac3821145b538 100644
+--- a/test/utils/accounts/deleted_account_test.dart
++++ b/test/utils/accounts/deleted_account_test.dart
+@@ -23,6 +23,7 @@ void main() {
+     tempDir = await Directory.systemTemp.createTemp('piliplus-account-test-');
+     Hive.init(tempDir.path);
+     GStorage.regAdapter();
++    GStorage.setting = await Hive.openBox('setting');
+     Accounts.account = await Hive.openBox<LoginAccount>('account');
+   });
+ 
 diff --git a/test/utils/extended_speeds_test.dart b/test/utils/extended_speeds_test.dart
 new file mode 100644
 index 0000000000000000000000000000000000000000..0489e1f68ce0e3118bdd92612cf89ca92c940a23
