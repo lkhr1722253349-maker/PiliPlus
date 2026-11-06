@@ -23,10 +23,10 @@ index 4bcfdbcced42a2dafd250d12e95549b27d1ac671..cef19f68124854cc018e5c267f07f38b
  
 diff --git a/CUSTOMIZATION.md b/CUSTOMIZATION.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..915955eb35660b1f592d0e7ccdd8f33b59858f28
+index 0000000000000000000000000000000000000000..253060d9d126458ac5b9deb34ce1f868d68b690a
 --- /dev/null
 +++ b/CUSTOMIZATION.md
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,67 @@
 +# PiliPlus 定制版
 +
 +上游：<https://github.com/bggRGjQaUbCoE/PiliPlus>
@@ -44,17 +44,14 @@ index 0000000000000000000000000000000000000000..915955eb35660b1f592d0e7ccdd8f33b
 +- 听视频通知沿用原版媒体通知，提供上一首、播放 / 暂停、下一首和播放顺序切换，不显示普通视频的前后快进按钮。
 +- 听视频的媒体回调独立保存；普通视频的回调、状态更新与关闭不会覆盖正在播放的歌单。系统旧快进 / 后退指令在听歌时分别映射到下一首 / 上一首。
 +- 手机播放页避开底部导航栏，展开 / 收起入口保持可见；顶栏只使用一次状态栏安全区。
-+- 名称优先使用视频的 BGM 歌曲标签 / 音乐详情；普通分类标签不自动当歌名。找不到明确歌曲标签时保留原名称。歌曲菜单“使用歌曲标签命名”可从视频标签中手动选择；手动改名会保留，原视频标题 / BV / 分 P 不变。
++- 自动取名先用 B 站歌曲标签或标题线索查询网易云，再核对分 P 时长、同名歌手和 B 站反查结果。匹配到当前 BV 才采用网易云曲名，匹配不确定时保留原名称。手动改名和网易云导入的曲名优先，原视频和音源不变。
 +- 底部“歌词设置”或歌曲菜单进入歌词页。用歌曲原名（不附中文译名）优先联网搜索网易云音乐，未取得歌词时回退 LRCLIB，结果显示来源、歌手、时长。仅唯一同名且通过语言、内容完整度、已知时长检查的结果自动采用；有歧义时通过搜索按钮选择版本，手动确认后持久化并保留。没有时间轴的歌词只显示全文，不伪造同步进度。
-+- 不请求视频字幕作为歌词，也不使用旧的字幕缓存或由字幕翻译得到的缓存；优先网络歌曲歌词，其次已保存的歌词 / 自动翻译，找不到时显示暂无歌词。同步歌词可点击跳转，支持按当前音源保存时间偏移。
-+- 自动翻译使用 MyMemory 免费接口，无需 API Key，但受服务额度和可用性限制。选择日 / 英 / 韩语后点击“自动翻译并保存”，文本会发给该服务；每行结果自动存入本机 Hive，重复内容复用缓存，翻译中断后可继续。译文与原文独立保存，可切换查看；长行按 UTF-8 字节分段，不发送 B 站账号凭据。
++- 不请求视频字幕作为歌词，也不使用旧的字幕缓存或由字幕翻译得到的缓存；优先网络歌曲歌词，其次已保存的歌曲歌词，找不到时显示暂无歌词。同步歌词可点击跳转，支持按当前音源保存时间偏移。
 +- “查看原视频”直接在本应用打开保留的原视频及原分 P，原视频失效时不会擅自跳转到替代源。
-+- 收起歌单后，播放条上方显示上一句 / 当前句 / 下一句三行同步歌词，换句以 380ms 从下往上平移并渐变；手机居中、平板位于右侧，非当前句半透明，无虚化。底部歌词键为“歌词设置”，可切换歌词来源、翻译和调整时间偏移，设置立即作用于三行显示。
-+- 每句在原有高度内上下双语显示：原文在上、中文在下，长句缩小字号。网易云返回的中文译文随原文缓存，按时间戳配对（允许 750ms 内的差异）；缺译句保持原文。已保存的自动翻译也和原文同时显示，不再用译文替换原文。
-+- 歌名单独自动翻译一次，语言不明确时由 MyMemory 自动识别；原名保存在独立字段，只有服务返回不同且有效中文译文时才在显示名称后追加括号。译文与原名分开持久化，歌词搜索继续使用原名。
++- 收起歌单后，播放条上方显示上一句 / 当前句 / 下一句三行同步歌词，换句以 380ms 从下往上平移并渐变；手机居中、平板位于右侧，非当前句半透明，无虚化。底部歌词键为“歌词设置”，可切换歌词来源和调整时间偏移，设置立即作用于三行显示。
++- 每句在原有高度内上下双语显示：原文在上、中文在下，长句缩小字号。网易云返回的中文译文随原文缓存，按时间戳配对（允许 750ms 内的差异）；缺译句保持原文。仅显示歌词来源提供的译文。
 +- 自动匹配先合并歌手、时长和同步歌词完全相同的重复发行记录，再校验当前音频时长；网络搜索返回后读取最新时长，避免播放器尚未准备好导致同名翻唱无法排除。仍有不同版本时只在视频标题能明确识别唯一歌手的情况下自动选中，否则保留手动选择。
 +- 歌词首次搜索无法可靠匹配时，读取原视频 BGM 标签和歌曲标签，使用 Wikimedia 官方 MediaWiki / Wikidata API（带 User-Agent，限每个语言站点一次请求）找百科标题作为辅助查询词，再回到音乐歌词搜索；不抓取百科页面 HTML，歌词匹配仍校验原名和实际音频时长。
-+- 可识别为日 / 英 / 韩语的非中文歌名自动追加括号中文译名，单独持久化并复用翻译缓存；搜歌词和换源仍使用原始歌名。中文或无法明确判断语言的汉字名称保持原样，翻译失败保留原名。
 +- 移动网络及系统标记为计费的 Wi-Fi 下，在展开 / 收起列表键左侧显示“耗费流量：xxx B / KB / MB / GB”；普通 Wi-Fi 下隐藏。音源通过仅监听本机回环地址的转发统计实际网络响应正文，并将完整音频缓存到应用本地支持目录；后续播放及拖动进度使用本地缓存，不重复下载。缓存上限约 512 MB，空间紧张时优先清理较旧文件；未完整下载的临时文件不复用。流量统计不含协议头、封面、歌词与其他页面请求。切歌重新累计，同一首的自动重试保留累计值；只累计计费网络期间收到的数据。
 +- 临时播放失败会重新取流、轮换可用 CDN 并最多自动重试两次。自然播完后，列表循环和随机播放最多连续尝试三首候选歌曲；手动切歌会取消此前的重试和自动跳过。仍失败时可选择再次重试或搜索换源。也可以在视频正常时点击“搜索换源”。搜索词可修改，结果可翻页，替换前可选择目标分 P。
 +- 换源保留歌曲名、原视频标题 / BV / 分 P 及历次来源记录。“保留原视频”指保留元信息和链接，不是缓存已删除的视频文件。
@@ -96,7 +93,7 @@ index 0000000000000000000000000000000000000000..915955eb35660b1f592d0e7ccdd8f33b
 +
 +测试覆盖来源与原作持久化、多 P 去重、换源收藏的请求顺序与失败恢复、跨账号隔离、匿名账号路由、已有倍速迁移及窄屏 / 宽屏歌单界面。
 +
-+换源搜索会对不同 BV 的标题做歌名共识识别：过滤 HTML 高亮、音质/翻唱等通用词，从书名号和标题分隔字段提取候选；至少 4 个视频且覆盖率达到 70%，没有支持率接近的不同候选时自动保存歌名。搜索框下显示识别名称和支持数量，手动命名不覆盖。识别名称用于后续歌词搜索、中文翻译和通知，原视频信息仍保留。
++换源搜索可提示 B 站标题中反复出现的候选歌名，歌单名称由网易云反查结果或手动命名决定。
 diff --git a/README.md b/README.md
 index 68fce8256ac8de430ec28f4cf34a952c6ef793be..56cea100967d377949f0506a2f5089b90fc70264 100644
 --- a/README.md
@@ -887,10 +884,10 @@ index 0000000000000000000000000000000000000000..81a8302d89803e523a6d5cd4792a64d3
 +}
 diff --git a/lib/pages/listening/controller.dart b/lib/pages/listening/controller.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..6977e305127383b3d400fbacf17e7c4db58156f6
+index 0000000000000000000000000000000000000000..445ecf77654efa41741e95bd38d159b61f6a71a6
 --- /dev/null
 +++ b/lib/pages/listening/controller.dart
-@@ -0,0 +1,885 @@
+@@ -0,0 +1,851 @@
 +import 'dart:async';
 +import 'dart:io' show Platform;
 +import 'dart:math';
@@ -906,7 +903,7 @@ index 0000000000000000000000000000000000000000..6977e305127383b3d400fbacf17e7c4d
 +import 'package:PiliPlus/models_new/fav/fav_folder/list.dart';
 +import 'package:PiliPlus/models_new/video/video_detail/data.dart';
 +import 'package:PiliPlus/pages/listening/models.dart';
-+import 'package:PiliPlus/pages/listening/song_name.dart';
++import 'package:PiliPlus/pages/listening/netease.dart';
 +import 'package:PiliPlus/pages/listening/lyrics.dart';
 +import 'package:PiliPlus/pages/listening/audio_proxy.dart';
 +import 'package:PiliPlus/plugin/pl_player/controller.dart';
@@ -1008,10 +1005,7 @@ index 0000000000000000000000000000000000000000..6977e305127383b3d400fbacf17e7c4d
 +      ),
 +    );
 +    final service = ListeningLyrics();
-+    final cached = service.saved(song);
-+    activeLyrics.value = cached?.priority == 0
-+        ? cached
-+        : service.saved(song, translation: true) ?? cached;
++    activeLyrics.value = service.saved(song);
 +    lyricsLoading.value = true;
 +    final name = song.name;
 +    try {
@@ -1034,52 +1028,6 @@ index 0000000000000000000000000000000000000000..6977e305127383b3d400fbacf17e7c4d
 +    } finally {
 +      service.close();
 +      if (request == _lyricsRequest) lyricsLoading.value = false;
-+    }
-+  }
-+
-+  bool _translatingNames = false;
-+  bool _translationPending = false;
-+  Future<void> translateSongNames() async {
-+    if (_translatingNames) {
-+      _translationPending = true;
-+      return;
-+    }
-+    _translatingNames = true;
-+    final service = ListeningLyrics();
-+    try {
-+      for (final list in playlists.toList()) {
-+        for (final song in list.songs.toList()) {
-+          final name = song.name;
-+          final language =
-+              ListeningLyrics.nameLanguage(
-+                name,
-+                context: '${song.source.title} ${song.original.title}',
-+              ) ??
-+              'autodetect';
-+          if (song.translatedNameSource == name) continue;
-+          try {
-+            final translated = await service.translateLine(name, language);
-+            if (song.name != name || !list.songs.contains(song)) continue;
-+            song.translatedNameSource = name;
-+            song.chineseName =
-+                translated != name &&
-+                    RegExp(r'[\u3400-\u9fff]').hasMatch(translated)
-+                ? translated
-+                : null;
-+            await save();
-+          } catch (error) {
-+            if ('$error'.contains('额度不足') || '$error'.contains('429')) break;
-+            continue;
-+          }
-+        }
-+      }
-+    } finally {
-+      service.close();
-+      _translatingNames = false;
-+      if (_translationPending) {
-+        _translationPending = false;
-+        unawaited(translateSongNames());
-+      }
 +    }
 +  }
 +
@@ -1107,19 +1055,22 @@ index 0000000000000000000000000000000000000000..6977e305127383b3d400fbacf17e7c4d
 +    try {
 +      for (final list in playlists.toList()) {
 +        for (final song in list.songs.toList()) {
-+          if (song.nameEdited ||
-+              song.namedSource == song.source.key ||
-+              song.source.cid == 0)
-+            continue;
 +          final source = song.source;
++          final checkedSource = 'netease:${source.key}';
++          if (song.nameEdited ||
++              song.namedSource == checkedSource ||
++              source.cid == 0) {
++            continue;
++          }
 +          try {
-+            final name = await ListeningMetadata().name(source);
++            final name = await _confirmedSongName(song, source);
 +            if (song.nameEdited ||
 +                song.source.key != source.key ||
-+                !list.songs.contains(song))
++                !list.songs.contains(song)) {
 +              continue;
++            }
 +            if (name != null) song.name = name;
-+            song.namedSource = source.key;
++            song.namedSource = checkedSource;
 +            await save();
 +          } catch (_) {
 +            /* Retry metadata later; playback remains available. */
@@ -1131,10 +1082,39 @@ index 0000000000000000000000000000000000000000..6977e305127383b3d400fbacf17e7c4d
 +      if (_namingPending) {
 +        _namingPending = false;
 +        unawaited(refreshSongNames());
-+      } else {
-+        unawaited(translateSongNames());
 +      }
 +    }
++  }
++
++  Future<String?> _confirmedSongName(ListeningSong song, SongSource source) async {
++    String? tag;
++    try {
++      tag = await ListeningMetadata().name(source);
++    } catch (_) {
++      // The video title can still provide a query when tags are unavailable.
++    }
++    final quoted = RegExp(r'《([^》]+)》').allMatches(source.title).toList();
++    final titleParts = source.title.split(RegExp(r'\s+[-–—]\s+|[|｜]'));
++    final hint = (tag ??
++        (quoted.length == 1
++            ? quoted.single.group(1)!
++            : titleParts.length == 2
++            ? titleParts.last.replaceAll(RegExp(r'【[^】]*】'), '')
++            : song.name)).trim();
++    if (hint.isEmpty) return null;
++    final candidates = await NeteaseClient.search(hint);
++    if (candidates.isEmpty) return null;
++    final video = await detail(source.bvid);
++    final part = video.pages?.where((part) => part.cid == source.cid).firstOrNull;
++    final match = matchNeteaseSongName(
++      hint: hint,
++      videoTitle: '${video.title ?? ''} ${source.title}',
++      partSeconds: part?.duration ?? 0,
++      candidates: candidates,
++    );
++    if (match == null) return null;
++    final results = await search('${match.name} ${match.artists}'.trim(), 1);
++    return results.any((item) => item.bvid == source.bvid) ? match.name : null;
 +  }
 +
 +  String? _openError;
@@ -1300,23 +1280,6 @@ index 0000000000000000000000000000000000000000..6977e305127383b3d400fbacf17e7c4d
 +    );
 +    if (result case Success(:final response)) return response.list ?? [];
 +    throw StateError(result.toString());
-+  }
-+
-+  Future<bool> applySearchSongName(
-+    ListeningSong song,
-+    String sourceKey,
-+    SongNameConsensus consensus,
-+  ) async {
-+    if (song.nameEdited ||
-+        song.source.key != sourceKey ||
-+        !playlists.any((list) => list.songs.contains(song)))
-+      return false;
-+    if (song.name == consensus.name) return true;
-+    song.name = consensus.name;
-+    song.namedSource = sourceKey;
-+    await save();
-+    unawaited(translateSongNames());
-+    return true;
 +  }
 +
 +  Future<Player> _ensurePlayer() async {
@@ -1813,10 +1776,10 @@ index 0000000000000000000000000000000000000000..aaf11cf5f9d5ec1f00bed8b5c8536a49
 +}
 diff --git a/lib/pages/listening/lyrics.dart b/lib/pages/listening/lyrics.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..d56106181c49f34a24750c0f001770b5dc8c46b5
+index 0000000000000000000000000000000000000000..a61b246935ca62e94cc0b72d7fba6d27705cf199
 --- /dev/null
 +++ b/lib/pages/listening/lyrics.dart
-@@ -0,0 +1,756 @@
+@@ -0,0 +1,646 @@
 +import 'dart:convert';
 +
 +import 'package:PiliPlus/http/loading_state.dart';
@@ -1827,7 +1790,6 @@ index 0000000000000000000000000000000000000000..d56106181c49f34a24750c0f001770b5
 +import 'package:PiliPlus/utils/storage.dart';
 +import 'package:crypto/crypto.dart';
 +import 'package:dio/dio.dart';
-+import 'package:html/parser.dart' show parseFragment;
 +
 +String? songTagName(List<VideoTagItem> tags, String title) {
 +  final music = tags.where((e) => e.tagType == 'bgm').toList();
@@ -2384,34 +2346,10 @@ index 0000000000000000000000000000000000000000..d56106181c49f34a24750c0f001770b5
 +
 +class ListeningLyrics {
 +  final LyricsSearch search = LyricsSearch();
-+  final Dio _translation;
-+  ListeningLyrics({Dio? translation})
-+    : _translation =
-+          translation ??
-+          Dio(
-+            BaseOptions(
-+              baseUrl: 'https://api.mymemory.translated.net',
-+              connectTimeout: const Duration(seconds: 12),
-+              receiveTimeout: const Duration(seconds: 20),
-+            ),
-+          );
 +  static String key(String text) =>
 +      sha256.convert(utf8.encode(text)).toString();
 +  static String sourceKey(ListeningSong song) =>
 +      key('${song.source.key}:${song.name}');
-+  static String? nameLanguage(String name, {String context = ''}) {
-+    if (RegExp(r'[\u3040-\u30ff]').hasMatch(name)) return 'ja';
-+    if (RegExp(r'[\uac00-\ud7af]').hasMatch(name)) return 'ko';
-+    // Kanji-only Japanese titles need language context from the source video.
-+    if (RegExp(r'[\u3400-\u9fff]').hasMatch(name) &&
-+        RegExp(r'[\u3040-\u30ff]').hasMatch(context))
-+      return 'ja';
-+    if (!RegExp(r'[\u3400-\u9fff]').hasMatch(name) &&
-+        RegExp('[a-zA-Z]').hasMatch(name))
-+      return 'en';
-+    return null;
-+  }
-+
 +  Future<LyricTrack?> preferred(
 +    ListeningSong song, {
 +    Duration duration = Duration.zero,
@@ -2460,50 +2398,20 @@ index 0000000000000000000000000000000000000000..d56106181c49f34a24750c0f001770b5
 +        return saved(song) ?? track;
 +      }
 +    } catch (_) {
-+      /* Saved song lyrics and translations remain available offline. */
++      /* Saved song lyrics remain available offline. */
 +    }
-+    final translation = saved(song, translation: true);
-+    if (translation != null) return translation;
-+    if (original != null) return original;
-+    return null;
++    return original;
 +  }
 +
-+  LyricTrack? saved(ListeningSong song, {bool translation = false}) {
-+    final json = GStorage.localCache.get(
-+      'listeningLyrics:${translation ? 'translation:' : ''}${sourceKey(song)}',
-+    );
++  LyricTrack? saved(ListeningSong song) {
++    final json = GStorage.localCache.get('listeningLyrics:${sourceKey(song)}');
 +    if (json is! Map) return null;
 +    final track = LyricTrack.fromJson(json);
-+    if (track.priority == 2 || track.original?.priority == 2) return null;
-+    if (track.priority == 0 && !track.confirmed && track.matchVersion < 1)
++    if (track.priority != 0 || track.original?.priority == 2) return null;
++    if (!track.confirmed &&
++        (track.matchVersion < 1 ||
++            !plausibleSongLyrics(song, track.lines, track.plain))) {
 +      return null;
-+    if (track.priority == 0 &&
-+        !track.confirmed &&
-+        !plausibleSongLyrics(song, track.lines, track.plain))
-+      return null;
-+    // A translation of a rejected match must not bring the wrong song back.
-+    final base = track.original;
-+    if (base?.priority == 0 && !base!.confirmed && base.matchVersion < 1)
-+      return null;
-+    if (base?.priority == 0 &&
-+        !base!.confirmed &&
-+        !plausibleSongLyrics(song, base.lines, base.plain))
-+      return null;
-+    if (track.priority == 0 &&
-+        track.lines.every((e) => e.translation.isEmpty)) {
-+      final translated = saved(song, translation: true);
-+      if (translated?.original?.source == track.source) {
-+        return LyricTrack(
-+          label: track.label,
-+          source: track.source,
-+          lines: bilingualLines(track.lines, translated!.lines),
-+          language: track.language,
-+          plain: track.plain,
-+          priority: track.priority,
-+          confirmed: track.confirmed,
-+          matchVersion: track.matchVersion,
-+        );
-+      }
 +    }
 +    return track;
 +  }
@@ -2512,73 +2420,18 @@ index 0000000000000000000000000000000000000000..d56106181c49f34a24750c0f001770b5
 +    ListeningSong song,
 +    LyricTrack track,
 +  ) => GStorage.localCache.put(
-+    'listeningLyrics:${track.priority == 1 ? 'translation:' : ''}${sourceKey(song)}',
++    'listeningLyrics:${sourceKey(song)}',
 +    track.toJson(),
 +  );
-+  static List<String> chunks(String text) {
-+    final parts = <String>[];
-+    var current = StringBuffer();
-+    var bytes = 0;
-+    for (final rune in text.runes) {
-+      final char = String.fromCharCode(rune);
-+      final size = utf8.encode(char).length;
-+      if (bytes + size > 450) {
-+        parts.add(current.toString());
-+        current = StringBuffer();
-+        bytes = 0;
-+      }
-+      current.write(char);
-+      bytes += size;
-+    }
-+    if (current.isNotEmpty) parts.add(current.toString());
-+    return parts;
-+  }
 +
-+  Future<String> translateLine(String text, String language) async {
-+    final cacheKey =
-+        'listeningTranslation:${key('mymemory:$language:zh-CN:$text')}';
-+    final cached = GStorage.localCache.get(cacheKey);
-+    if (cached is String && cached.isNotEmpty) return cached;
-+    final segments = chunks(text);
-+    if (segments.length > 1) {
-+      final values = <String>[];
-+      for (final segment in segments) {
-+        values.add(await translateLine(segment, language));
-+      }
-+      final joined = values.join();
-+      await GStorage.localCache.put(cacheKey, joined);
-+      return joined;
-+    }
-+    final translated = <String>[];
-+    for (final part in chunks(text)) {
-+      final res = await _translation.get(
-+        '/get',
-+        queryParameters: {'q': part, 'langpair': '$language|zh-CN', 'mt': 1},
-+      );
-+      final data = res.data;
-+      if ('${data['responseStatus']}' != '200' || data['quotaFinished'] == true)
-+        throw StateError('免费翻译额度不足或服务暂不可用，已完成的译文已保存');
-+      final value = data['responseData']?['translatedText'];
-+      if (value is! String || value.trim().isEmpty)
-+        throw StateError('翻译服务未返回译文');
-+      translated.add(parseFragment(value).text ?? value);
-+    }
-+    final result = translated.join();
-+    await GStorage.localCache.put(cacheKey, result);
-+    return result;
-+  }
-+
-+  void close() {
-+    search.close();
-+    _translation.close(force: true);
-+  }
++  void close() => search.close();
 +}
 diff --git a/lib/pages/listening/lyrics_view.dart b/lib/pages/listening/lyrics_view.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..38b86f7d09432a8728002a172343066163b88d43
+index 0000000000000000000000000000000000000000..565ea8f186664d651886bb12ba04180c462f1584
 --- /dev/null
 +++ b/lib/pages/listening/lyrics_view.dart
-@@ -0,0 +1,431 @@
+@@ -0,0 +1,340 @@
 +import 'dart:async';
 +
 +import 'package:PiliPlus/pages/listening/controller.dart';
@@ -2611,12 +2464,10 @@ index 0000000000000000000000000000000000000000..38b86f7d09432a8728002a1723430661
 +    text: widget.song.name,
 +  );
 +  late final Worker positionWorker;
-+  bool busy = true, translating = false;
++  bool busy = true;
 +  String? message;
-+  String language = 'ja';
 +  Duration offset = Duration.zero;
 +  int active = -1;
-+  int generation = 0;
 +  bool get isCurrent => identical(widget.controller.current.value, widget.song);
 +
 +  @override
@@ -2628,12 +2479,7 @@ index 0000000000000000000000000000000000000000..38b86f7d09432a8728002a1723430661
 +        defaultValue: 0,
 +      ),
 +    );
-+    for (final track in [
-+      service.saved(widget.song),
-+      service.saved(widget.song, translation: true),
-+    ]) {
-+      if (track != null) tracks.add(track);
-+    }
++    if (service.saved(widget.song) case final track?) tracks.add(track);
 +    _choosePreferred();
 +    positionWorker = ever(widget.controller.position, (_) => _follow());
 +    unawaited(_load());
@@ -2768,66 +2614,8 @@ index 0000000000000000000000000000000000000000..38b86f7d09432a8728002a1723430661
 +    });
 +  }
 +
-+  Future<void> _translate() async {
-+    final base = selected?.original ?? selected;
-+    if (base == null) return;
-+    final request = ++generation;
-+    final sourceLines = base.lines.isEmpty
-+        ? base.plain
-+              .split('\n')
-+              .where((e) => e.trim().isNotEmpty)
-+              .map((e) => LyricLine(Duration.zero, e))
-+              .toList()
-+        : base.lines;
-+    if (sourceLines.isEmpty) return;
-+    setState(() {
-+      translating = true;
-+      message = '使用 MyMemory 免费翻译，译文逐行保存；额度耗尽可稍后继续';
-+    });
-+    final result = <LyricLine>[];
-+    try {
-+      for (var i = 0; i < sourceLines.length; i++) {
-+        if (!mounted || request != generation) return;
-+        final line = sourceLines[i];
-+        final text = await service.translateLine(line.text, language);
-+        if (!mounted || request != generation) return;
-+        result.add(LyricLine(line.start, text, line.end));
-+        final translated = LyricTrack(
-+          label: '自动翻译 ${i + 1}/${sourceLines.length} · MyMemory',
-+          source: base.source,
-+          language: 'zh-CN',
-+          lines: base.lines.isEmpty
-+              ? []
-+              : [...result, ...sourceLines.skip(i + 1)],
-+          plain: base.lines.isEmpty
-+              ? [
-+                  ...result,
-+                  ...sourceLines.skip(i + 1),
-+                ].map((e) => e.text).join('\n')
-+              : '',
-+          priority: 1,
-+          original: base,
-+        );
-+        await service.save(widget.song, translated);
-+        if (!mounted) return;
-+        setState(() {
-+          tracks.removeWhere((e) => e.priority == 1);
-+          tracks.add(translated);
-+          selected = translated;
-+        });
-+        _follow();
-+      }
-+      if (mounted) setState(() => message = '译文已自动保存在本机');
-+    } catch (e) {
-+      if (mounted) setState(() => message = '$e');
-+    } finally {
-+      if (mounted && request == generation) setState(() => translating = false);
-+    }
-+  }
-+
 +  @override
 +  void dispose() {
-+    generation++;
 +    positionWorker.dispose();
 +    scroll.dispose();
 +    query.dispose();
@@ -2858,7 +2646,7 @@ index 0000000000000000000000000000000000000000..38b86f7d09432a8728002a1723430661
 +                ),
 +                IconButton(
 +                  tooltip: '搜索歌词',
-+                  onPressed: busy || translating
++                  onPressed: busy
 +                      ? null
 +                      : () async {
 +                          setState(() => busy = true);
@@ -2870,7 +2658,7 @@ index 0000000000000000000000000000000000000000..38b86f7d09432a8728002a1723430661
 +              ],
 +            ),
 +          ),
-+          if (busy || translating) const LinearProgressIndicator(),
++          if (busy) const LinearProgressIndicator(),
 +          if (tracks.isNotEmpty)
 +            Padding(
 +              padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2885,41 +2673,15 @@ index 0000000000000000000000000000000000000000..38b86f7d09432a8728002a1723430661
 +                      ),
 +                    )
 +                    .toList(),
-+                onChanged: translating
-+                    ? null
-+                    : (value) {
-+                        setState(() {
-+                          selected = value;
-+                          active = -1;
-+                        });
-+                        _follow();
-+                      },
++                onChanged: (value) {
++                  setState(() {
++                    selected = value;
++                    active = -1;
++                  });
++                  _follow();
++                },
 +              ),
 +            ),
-+          Wrap(
-+            alignment: WrapAlignment.center,
-+            crossAxisAlignment: WrapCrossAlignment.center,
-+            children: [
-+              DropdownButton<String>(
-+                value: language,
-+                items: const [
-+                  DropdownMenuItem(value: 'ja', child: Text('日语 → 中文')),
-+                  DropdownMenuItem(value: 'en', child: Text('英语 → 中文')),
-+                  DropdownMenuItem(value: 'ko', child: Text('韩语 → 中文')),
-+                ],
-+                onChanged: translating
-+                    ? null
-+                    : (value) => setState(() => language = value!),
-+              ),
-+              TextButton.icon(
-+                onPressed: selected == null || busy || translating
-+                    ? null
-+                    : _translate,
-+                icon: const Icon(Icons.translate),
-+                label: const Text('自动翻译并保存'),
-+              ),
-+            ],
-+          ),
 +          if (message != null)
 +            Padding(
 +              padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -3012,10 +2774,10 @@ index 0000000000000000000000000000000000000000..38b86f7d09432a8728002a1723430661
 +}
 diff --git a/lib/pages/listening/models.dart b/lib/pages/listening/models.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..e72b4d1f3d65cb6ac8d97a7c8747a37372ce7b0e
+index 0000000000000000000000000000000000000000..835c90d22e759c0b1e48b8bdc541f4a6a0f59b19
 --- /dev/null
 +++ b/lib/pages/listening/models.dart
-@@ -0,0 +1,148 @@
+@@ -0,0 +1,137 @@
 +class SongSource {
 +  final String bvid;
 +  final int aid;
@@ -3055,12 +2817,7 @@ index 0000000000000000000000000000000000000000..e72b4d1f3d65cb6ac8d97a7c8747a373
 +class ListeningSong {
 +  final String id;
 +  String name;
-+  String? chineseName;
-+  String? translatedNameSource;
-+  String get displayName =>
-+      chineseName?.isNotEmpty == true && translatedNameSource == name
-+      ? '$name（$chineseName）'
-+      : name;
++  String get displayName => name;
 +  bool nameEdited;
 +  String? namedSource;
 +  final SongSource original;
@@ -3074,8 +2831,6 @@ index 0000000000000000000000000000000000000000..e72b4d1f3d65cb6ac8d97a7c8747a373
 +  ListeningSong({
 +    required this.id,
 +    required this.name,
-+    this.chineseName,
-+    this.translatedNameSource,
 +    this.nameEdited = false,
 +    this.namedSource,
 +    required this.original,
@@ -3098,8 +2853,6 @@ index 0000000000000000000000000000000000000000..e72b4d1f3d65cb6ac8d97a7c8747a373
 +  factory ListeningSong.fromJson(Map json) => ListeningSong(
 +    id: json['id'],
 +    name: json['name'],
-+    chineseName: json['chineseName'],
-+    translatedNameSource: json['translatedNameSource'],
 +    nameEdited:
 +        json['nameEdited'] ?? (json['name'] != json['original']['title']),
 +    namedSource: json['namedSource'],
@@ -3116,8 +2869,6 @@ index 0000000000000000000000000000000000000000..e72b4d1f3d65cb6ac8d97a7c8747a373
 +  Map<String, dynamic> toJson() => {
 +    'id': id,
 +    'name': name,
-+    'chineseName': chineseName,
-+    'translatedNameSource': translatedNameSource,
 +    'nameEdited': nameEdited,
 +    'namedSource': namedSource,
 +    'original': original.toJson(),
@@ -3166,10 +2917,10 @@ index 0000000000000000000000000000000000000000..e72b4d1f3d65cb6ac8d97a7c8747a373
 +}
 diff --git a/lib/pages/listening/netease.dart b/lib/pages/listening/netease.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..3094dad4185065cafaff85ab84b54fd0cd39bd1d
+index 0000000000000000000000000000000000000000..967de0333a9f32c93cd8c44845285f2ae47c5b6d
 --- /dev/null
 +++ b/lib/pages/listening/netease.dart
-@@ -0,0 +1,316 @@
+@@ -0,0 +1,356 @@
 +import 'dart:convert';
 +import 'dart:math';
 +
@@ -3274,8 +3025,35 @@ index 0000000000000000000000000000000000000000..3094dad4185065cafaff85ab84b54fd0
 +  var text = value.toLowerCase();
 +  // Drop bracketed suffixes such as (Live), 【MV】, [4K].
 +  text = text.replaceAll(RegExp(r'[\(（\[【][^\)）\]】]*[\)）\]】]'), '');
-+  text = text.replaceAll(RegExp(r'[^a-z0-9\u3040-\u30ff\u4e00-\u9fff]'), '');
++  text = text.replaceAll(RegExp(r'[^a-z0-9\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]'), '');
 +  return text;
++}
++
++NeteaseSong? matchNeteaseSongName({
++  required String hint,
++  required String videoTitle,
++  required int partSeconds,
++  required Iterable<NeteaseSong> candidates,
++}) {
++  final title = normalizeNeteaseText(hint);
++  if (title.isEmpty || partSeconds <= 0) return null;
++  final video = normalizeNeteaseText(videoTitle);
++  final matches = <(String, String), NeteaseSong>{};
++  for (final song in candidates) {
++    final seconds = song.durationMs / 1000;
++    if (normalizeNeteaseText(song.name) != title ||
++        seconds <= 0 ||
++        (seconds - partSeconds).abs() > max(12, partSeconds * .05)) {
++      continue;
++    }
++    matches[(song.name.toLowerCase(), song.artists.toLowerCase())] = song;
++  }
++  if (matches.length == 1) return matches.values.single;
++  final credited = matches.values.where((song) =>
++      song.artists.split(' / ').map(normalizeNeteaseText).any(
++        (artist) => artist.length >= 2 && video.contains(artist),
++      ));
++  return credited.length == 1 ? credited.single : null;
 +}
 +
 +/// Picks the best Bilibili search result for a NetEase song.
@@ -3349,6 +3127,19 @@ index 0000000000000000000000000000000000000000..3094dad4185065cafaff85ab84b54fd0
 +      },
 +    ),
 +  );
++
++  static Future<List<NeteaseSong>> search(String name) async {
++    final response = await _dio.get<dynamic>(
++      '/api/search/get',
++      queryParameters: {'s': name, 'type': 1, 'limit': 10},
++    );
++    final data = response.data is String
++        ? jsonDecode(response.data as String)
++        : response.data;
++    final list = data is Map ? data['result']?['songs'] : null;
++    if (list is! List) return [];
++    return list.whereType<Map>().map(_parseSong).whereType<NeteaseSong>().toList();
++  }
 +
 +  /// Resolves a short link such as `https://163cn.tv/xxxx` and parses it.
 +  static Future<NeteaseLink> resolve(String input) async {
@@ -3567,10 +3358,10 @@ index 0000000000000000000000000000000000000000..623304e56b1cb76f3342ae2257e05999
 +}
 diff --git a/lib/pages/listening/view.dart b/lib/pages/listening/view.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..8cdba90468311911d2a2319a8350f1bdb83da407
+index 0000000000000000000000000000000000000000..cf9dc33bfd9455cd849405a0b8d10a38a23174e6
 --- /dev/null
 +++ b/lib/pages/listening/view.dart
-@@ -0,0 +1,1263 @@
+@@ -0,0 +1,1250 @@
 +import 'dart:async';
 +
 +import 'package:PiliPlus/http/fav.dart';
@@ -4215,7 +4006,6 @@ index 0000000000000000000000000000000000000000..8cdba90468311911d2a2319a8350f1bd
 +        song.nameEdited = true;
 +        song.namedSource = song.source.key;
 +        await controller.save();
-+        unawaited(controller.translateSongNames());
 +      }
 +    } else {
 +      throw StateError('读取视频标签失败，请稍后重试');
@@ -4464,7 +4254,6 @@ index 0000000000000000000000000000000000000000..8cdba90468311911d2a2319a8350f1bd
 +                    song.name = name;
 +                    song.nameEdited = true;
 +                    await controller.save();
-+                    unawaited(controller.translateSongNames());
 +                  }
 +                case 'delete':
 +                  await controller.removeSong(list, song);
@@ -4710,9 +4499,7 @@ index 0000000000000000000000000000000000000000..8cdba90468311911d2a2319a8350f1bd
 +
 +class _SourceSearchState extends State<_SourceSearch> {
 +  late final input = TextEditingController(text: widget.song.name);
-+  late final sourceKey = widget.song.source.key;
 +  SongNameConsensus? consensus;
-+  bool nameApplied = false;
 +  final List<SearchVideoItemModel> results = [];
 +  bool busy = false;
 +  String? error;
@@ -4731,7 +4518,6 @@ index 0000000000000000000000000000000000000000..8cdba90468311911d2a2319a8350f1bd
 +      error = null;
 +      if (!more) {
 +        consensus = null;
-+        nameApplied = false;
 +      }
 +    });
 +    try {
@@ -4751,17 +4537,9 @@ index 0000000000000000000000000000000000000000..8cdba90468311911d2a2319a8350f1bd
 +        if (item.bvid?.isNotEmpty == true) unique[item.bvid!] = item.title;
 +      }
 +      final inferred = inferSongName(unique.values);
-+      final applied =
-+          inferred != null &&
-+          await widget.controller.applySearchSongName(
-+            widget.song,
-+            sourceKey,
-+            inferred,
-+          );
 +      if (!mounted) return;
 +      setState(() {
 +        consensus = inferred;
-+        nameApplied = applied;
 +      });
 +    } catch (e) {
 +      if (mounted) setState(() => error = e.toString());
@@ -4799,7 +4577,7 @@ index 0000000000000000000000000000000000000000..8cdba90468311911d2a2319a8350f1bd
 +          if (busy) const LinearProgressIndicator(),
 +          if (consensus case final detected?)
 +            Text(
-+              '${nameApplied ? "已识别歌名" : "候选歌名（保留手动名称）"}：${detected.name} · ${detected.matches}/${detected.total} 个视频',
++              'B 站候选歌名：${detected.name} · ${detected.matches}/${detected.total} 个视频',
 +            ),
 +          if (error != null) Text(error!),
 +          Expanded(
@@ -6049,10 +5827,10 @@ index 0000000000000000000000000000000000000000..75bb910e10d83f56eea7476401696753
 +}
 diff --git a/test/pages/listening/compact_lyrics_test.dart b/test/pages/listening/compact_lyrics_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..cb5af27a63b571eb55b6688aea6d1b8db770d5aa
+index 0000000000000000000000000000000000000000..77a9d368300f5ee4563cb201443ceeb675283b7b
 --- /dev/null
 +++ b/test/pages/listening/compact_lyrics_test.dart
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,69 @@
 +import 'package:PiliPlus/pages/listening/compact_lyrics.dart';
 +import 'package:PiliPlus/pages/listening/controller.dart';
 +import 'package:PiliPlus/pages/listening/lyrics.dart';
@@ -6121,28 +5899,6 @@ index 0000000000000000000000000000000000000000..cb5af27a63b571eb55b6688aea6d1b8d
 +      await tester.pumpWidget(const SizedBox());
 +    });
 +  }
-+  test('translated title is separate from the search title and invalidated on rename', () {
-+    final song = ListeningSong(
-+      id: 'test',
-+      name: 'Test song',
-+      chineseName: '测试歌曲',
-+      translatedNameSource: 'Test song',
-+      original: const SongSource(
-+        bvid: 'BV1',
-+        aid: 1,
-+        cid: 1,
-+        page: 1,
-+        title: 'video',
-+      ),
-+    );
-+    expect(song.displayName, 'Test song（测试歌曲）');
-+    expect(ListeningSong.fromJson(song.toJson()).displayName, song.displayName);
-+    expect(song.name, 'Test song');
-+    song.name = 'Another song';
-+    expect(song.displayName, 'Another song');
-+    expect(ListeningLyrics.nameLanguage('中文歌名'), isNull);
-+    expect(ListeningLyrics.nameLanguage('春日影（かな）'), 'ja');
-+  });
 +}
 diff --git a/test/pages/listening/favorite_link_test.dart b/test/pages/listening/favorite_link_test.dart
 new file mode 100644
@@ -6423,18 +6179,16 @@ index 0000000000000000000000000000000000000000..825b09950aa1852e92a0aa9777980b7d
 +}
 diff --git a/test/pages/listening/lyrics_test.dart b/test/pages/listening/lyrics_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..917048884b1625faec439305ee8e133ba412d96c
+index 0000000000000000000000000000000000000000..f32dd5e65483e656331e8ca5c404aca1abc24159
 --- /dev/null
 +++ b/test/pages/listening/lyrics_test.dart
-@@ -0,0 +1,148 @@
-+import 'dart:convert';
+@@ -0,0 +1,75 @@
 +import 'dart:io';
 +
 +import 'package:PiliPlus/models_new/video/video_tag/data.dart';
 +import 'package:PiliPlus/pages/listening/lyrics.dart';
 +import 'package:PiliPlus/pages/listening/models.dart';
 +import 'package:PiliPlus/utils/storage.dart';
-+import 'package:dio/dio.dart';
 +import 'package:flutter_test/flutter_test.dart';
 +import 'package:hive_ce/hive.dart';
 +
@@ -6472,115 +6226,44 @@ index 0000000000000000000000000000000000000000..917048884b1625faec439305ee8e133b
 +    ]);
 +    expect(lyricIndex(lines, const Duration(seconds: 3), Duration.zero), -1);
 +  });
-+  test('translation splits on Unicode boundaries under 500 bytes', () {
-+    final text = List.filled(400, 'あ😀').join();
-+    final parts = ListeningLyrics.chunks(text);
-+    expect(parts.join(), text);
-+    expect(parts.every((e) => utf8.encode(e).length <= 450), isTrue);
-+  });
-+  test(
-+    'translations survive service restart and failures are not cached',
-+    () async {
-+      final directory = await Directory.systemTemp.createTemp(
-+        'listening-lyrics-',
-+      );
-+      Hive.init(directory.path);
-+      GStorage.localCache = await Hive.openBox('localCache');
-+      var calls = 0;
-+      var fail = false;
-+      Dio client() => Dio()
-+        ..interceptors.add(
-+          InterceptorsWrapper(
-+            onRequest: (options, handler) {
-+              calls++;
-+              handler.resolve(
-+                Response(
-+                  requestOptions: options,
-+                  data: {
-+                    'responseStatus': fail ? 429 : 200,
-+                    'responseData': {'translatedText': '测试译文'},
-+                  },
-+                ),
-+              );
-+            },
-+          ),
-+        );
-+      final first = ListeningLyrics(translation: client());
-+      expect(await first.translateLine('synthetic test', 'en'), '测试译文');
-+      first.close();
-+      final second = ListeningLyrics(translation: client());
-+      expect(await second.translateLine('synthetic test', 'en'), '测试译文');
-+      expect(calls, 1);
-+      fail = true;
-+      await expectLater(
-+        second.translateLine('another test', 'en'),
-+        throwsStateError,
-+      );
-+      fail = false;
-+      expect(await second.translateLine('another test', 'en'), '测试译文');
-+      expect(calls, 3);
-+      const original = LyricTrack(
-+        label: 'original',
-+        source: 'test',
-+        lines: [LyricLine(Duration.zero, 'synthetic')],
-+        priority: 0,
-+        confirmed: true,
-+      );
-+      const translated = LyricTrack(
-+        label: 'translated',
-+        source: 'test',
-+        lines: [LyricLine(Duration.zero, '测试')],
-+        priority: 1,
-+        original: original,
-+      );
-+      final song = ListeningSong(
-+        id: '1',
-+        name: 'test',
-+        original: const SongSource(
-+          bvid: 'BV1',
-+          aid: 1,
-+          cid: 1,
-+          page: 1,
-+          title: 'test',
-+        ),
-+      );
-+      await second.save(song, original);
-+      await second.save(song, translated);
-+      expect(second.saved(song)?.priority, 0);
-+      expect(
-+        second.saved(song, translation: true)?.original?.lines.single.text,
-+        'synthetic',
-+      );
-+      const subtitle = LyricTrack(
-+        label: 'old subtitle',
-+        source: 'video',
-+        lines: [],
-+      );
-+      await second.save(song, subtitle);
-+      expect(second.saved(song), isNull);
-+      await second.save(
-+        song,
-+        const LyricTrack(
-+          label: 'old subtitle translation',
-+          source: 'video',
-+          lines: [],
-+          priority: 1,
-+          original: subtitle,
-+        ),
-+      );
-+      expect(second.saved(song, translation: true), isNull);
-+      second.close();
++  test('saved lyrics keep provider translations and ignore old subtitles', () async {
++    final directory = await Directory.systemTemp.createTemp('listening-lyrics-');
++    Hive.init(directory.path);
++    GStorage.localCache = await Hive.openBox('localCache');
++    final service = ListeningLyrics();
++    addTearDown(() async {
++      service.close();
 +      await Hive.close();
 +      await directory.delete(recursive: true);
-+    },
-+  );
++    });
++    final song = ListeningSong(
++      id: '1',
++      name: 'test',
++      original: const SongSource(bvid: 'BV1', aid: 1, cid: 1, page: 1, title: 'test'),
++    );
++    await GStorage.localCache.put(
++      'listeningLyrics:translation:${ListeningLyrics.sourceKey(song)}',
++      const LyricTrack(label: 'old translation', source: 'test', lines: [], priority: 1).toJson(),
++    );
++    expect(service.saved(song), isNull);
++    await service.save(song, const LyricTrack(
++      label: 'song lyrics',
++      source: 'test',
++      lines: [LyricLine(Duration.zero, 'synthetic', null, '官方译文')],
++      priority: 0,
++      confirmed: true,
++    ));
++    expect(service.saved(song)?.lines.single.translation, '官方译文');
++    await service.save(song, const LyricTrack(label: 'old subtitle', source: 'video', lines: []));
++    expect(service.saved(song), isNull);
++  });
 +}
 diff --git a/test/pages/listening/lyrics_view_test.dart b/test/pages/listening/lyrics_view_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..ebb032b4249c756e0334415e98357819ddfe12c1
+index 0000000000000000000000000000000000000000..af41ae4692131cea112a86047575975b4a56fdf4
 --- /dev/null
 +++ b/test/pages/listening/lyrics_view_test.dart
-@@ -0,0 +1,126 @@
+@@ -0,0 +1,107 @@
 +import 'dart:io';
 +
 +import 'package:PiliPlus/pages/listening/controller.dart';
@@ -6618,15 +6301,7 @@ index 0000000000000000000000000000000000000000..ebb032b4249c756e0334415e98357819
 +  @override
 +  Future<void> save(ListeningSong song, LyricTrack track) async {}
 +  @override
-+  LyricTrack? saved(ListeningSong song, {bool translation = false}) =>
-+      translation
-+      ? const LyricTrack(
-+          label: '已保存译文',
-+          source: 'test',
-+          lines: [LyricLine(Duration.zero, '测试译文')],
-+          priority: 1,
-+        )
-+      : null;
++  LyricTrack? saved(ListeningSong song) => null;
 +}
 +
 +void main() {
@@ -6642,7 +6317,7 @@ index 0000000000000000000000000000000000000000..ebb032b4249c756e0334415e98357819
 +  });
 +  for (final size in [const Size(360, 640), const Size(1000, 500)]) {
 +    testWidgets(
-+      'lyrics prefers song search over saved translation without fetching subtitles at $size',
++      'lyrics searches the original title without fetching subtitles at $size',
 +      (tester) async {
 +        tester.view.physicalSize = size;
 +        tester.view.devicePixelRatio = 1;
@@ -6651,8 +6326,6 @@ index 0000000000000000000000000000000000000000..ebb032b4249c756e0334415e98357819
 +        final song = ListeningSong(
 +          id: 'test',
 +          name: 'test song',
-+          chineseName: '中文译名',
-+          translatedNameSource: 'test song',
 +          original: const SongSource(
 +            bvid: 'BV1',
 +            aid: 1,
@@ -6662,15 +6335,6 @@ index 0000000000000000000000000000000000000000..ebb032b4249c756e0334415e98357819
 +          ),
 +        );
 +        final service = FakeLyrics();
-+        await service.save(
-+          song,
-+          const LyricTrack(
-+            label: '已保存译文',
-+            source: 'test',
-+            lines: [LyricLine(Duration.zero, '测试译文')],
-+            priority: 1,
-+          ),
-+        );
 +        final controller = ListeningController();
 +        controller.current.value = song;
 +        await tester.pumpWidget(
@@ -6825,10 +6489,10 @@ index 0000000000000000000000000000000000000000..b88e3fddf56ae5722990d9066b36db3d
 +}
 diff --git a/test/pages/listening/netease_test.dart b/test/pages/listening/netease_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..146f58342fa55ea8b3b7baf19da6b7b446c52643
+index 0000000000000000000000000000000000000000..62fede52d97a10315a5102e14a1c9b1426f35d06
 --- /dev/null
 +++ b/test/pages/listening/netease_test.dart
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,189 @@
 +import 'package:PiliPlus/models/search/result.dart';
 +import 'package:PiliPlus/pages/listening/netease.dart';
 +import 'package:flutter_test/flutter_test.dart';
@@ -6919,6 +6583,45 @@ index 0000000000000000000000000000000000000000..146f58342fa55ea8b3b7baf19da6b7b4
 +    expect(normalizeNeteaseText('恐龙的时代还是结束了（Intro）'), '恐龙的时代还是结束了');
 +    expect(normalizeNeteaseText('【4K】Song (Live)'), 'song');
 +    expect(normalizeNeteaseText(''), '');
++  });
++
++  test('NetEase canonical name requires a title and matching part duration', () {
++    expect(
++      matchNeteaseSongName(
++        hint: '恐龙的时代还是结束了',
++        videoTitle: '翻唱片段',
++        partSeconds: 102,
++        candidates: [song],
++      ),
++      same(song),
++    );
++    expect(
++      matchNeteaseSongName(
++        hint: '恐龙的时代还是结束了',
++        videoTitle: '演唱会合集',
++        partSeconds: 400,
++        candidates: [song],
++      ),
++      isNull,
++    );
++  });
++
++  test('same-title NetEase tracks require an unambiguous artist credit', () {
++    const other = NeteaseSong(
++      id: 2,
++      name: '恐龙的时代还是结束了',
++      artists: 'Another Artist',
++      album: '',
++      durationMs: 103000,
++    );
++    NeteaseSong? match(String title) => matchNeteaseSongName(
++      hint: '恐龙的时代还是结束了',
++      videoTitle: title,
++      partSeconds: 102,
++      candidates: [song, other],
++    );
++    expect(match('翻唱片段'), isNull);
++    expect(match('Another Artist 演唱'), same(other));
 +  });
 +
 +  test('prefers duration-matched, high-play candidates', () {
