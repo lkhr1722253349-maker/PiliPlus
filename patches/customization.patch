@@ -23,7 +23,7 @@ index 4bcfdbcced42a2dafd250d12e95549b27d1ac671..cef19f68124854cc018e5c267f07f38b
  
 diff --git a/CUSTOMIZATION.md b/CUSTOMIZATION.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..932ea548f5884f130413e50750197c325d5fc1f6
+index 0000000000000000000000000000000000000000..915955eb35660b1f592d0e7ccdd8f33b59858f28
 --- /dev/null
 +++ b/CUSTOMIZATION.md
 @@ -0,0 +1,70 @@
@@ -56,7 +56,7 @@ index 0000000000000000000000000000000000000000..932ea548f5884f130413e50750197c32
 +- 歌词首次搜索无法可靠匹配时，读取原视频 BGM 标签和歌曲标签，使用 Wikimedia 官方 MediaWiki / Wikidata API（带 User-Agent，限每个语言站点一次请求）找百科标题作为辅助查询词，再回到音乐歌词搜索；不抓取百科页面 HTML，歌词匹配仍校验原名和实际音频时长。
 +- 可识别为日 / 英 / 韩语的非中文歌名自动追加括号中文译名，单独持久化并复用翻译缓存；搜歌词和换源仍使用原始歌名。中文或无法明确判断语言的汉字名称保持原样，翻译失败保留原名。
 +- 移动网络及系统标记为计费的 Wi-Fi 下，在展开 / 收起列表键左侧显示“耗费流量：xxx B / KB / MB / GB”；普通 Wi-Fi 下隐藏。音源通过仅监听本机回环地址的转发统计实际网络响应正文，并将完整音频缓存到应用本地支持目录；后续播放及拖动进度使用本地缓存，不重复下载。缓存上限约 512 MB，空间紧张时优先清理较旧文件；未完整下载的临时文件不复用。流量统计不含协议头、封面、歌词与其他页面请求。切歌重新累计，同一首的自动重试保留累计值；只累计计费网络期间收到的数据。
-+- 临时播放失败会重新取流并最多自动重试两次，切歌取消旧歌曲的待重试任务；仍失败时可选择再次重试或搜索换源。也可以在视频正常时点击“搜索换源”。搜索词可修改，结果可翻页，替换前可选择目标分 P。
++- 临时播放失败会重新取流、轮换可用 CDN 并最多自动重试两次。自然播完后，列表循环和随机播放最多连续尝试三首候选歌曲；手动切歌会取消此前的重试和自动跳过。仍失败时可选择再次重试或搜索换源。也可以在视频正常时点击“搜索换源”。搜索词可修改，结果可翻页，替换前可选择目标分 P。
 +- 换源保留歌曲名、原视频标题 / BV / 分 P 及历次来源记录。“保留原视频”指保留元信息和链接，不是缓存已删除的视频文件。
 +- 导入收藏的条目会同步修改关联收藏夹：先收藏新视频，保存本地来源，再移除旧收藏。移除失败时保留重试入口。其他歌单歌曲仍依赖旧视频的分 P 时，保留旧收藏。
 +- 收藏同步绑定导入时的主账号，切换账号后必须切回原账号再同步。本地手动添加且没有关联收藏夹的条目只修改歌单。
@@ -887,10 +887,10 @@ index 0000000000000000000000000000000000000000..81a8302d89803e523a6d5cd4792a64d3
 +}
 diff --git a/lib/pages/listening/controller.dart b/lib/pages/listening/controller.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..ca6744e46c68c6c112acba2c64379247ca1e883a
+index 0000000000000000000000000000000000000000..6977e305127383b3d400fbacf17e7c4db58156f6
 --- /dev/null
 +++ b/lib/pages/listening/controller.dart
-@@ -0,0 +1,812 @@
+@@ -0,0 +1,885 @@
 +import 'dart:async';
 +import 'dart:io' show Platform;
 +import 'dart:math';
@@ -923,6 +923,7 @@ index 0000000000000000000000000000000000000000..ca6744e46c68c6c112acba2c64379247
 +import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 +import 'package:get/get.dart';
 +import 'package:media_kit/media_kit.dart';
++import 'package:synchronized/synchronized.dart';
 +
 +enum ListeningMode { list, shuffle, single }
 +
@@ -1085,7 +1086,10 @@ index 0000000000000000000000000000000000000000..ca6744e46c68c6c112acba2c64379247
 +  Player? _player;
 +  Future<Player>? _creatingPlayer;
 +  final List<StreamSubscription<dynamic>> _subscriptions = [];
++  final _playerLock = Lock();
 +  int _request = 0;
++  int? _readyRequest;
++  int? _openingRequest;
 +  String? _playingPlaylistId;
 +  final _random = Random();
 +  bool _ownsMediaSession = false;
@@ -1366,8 +1370,10 @@ index 0000000000000000000000000000000000000000..ca6744e46c68c6c112acba2c64379247
 +        final song = current.value;
 +        if (song != null) {
 +          if (loading.value) {
-+            _openError = error;
-+          } else if (_ownsMediaSession && _streamRetries < 2) {
++            if (_openingRequest == _request) _openError = error;
++          } else if (_ownsMediaSession &&
++              _readyRequest == _request &&
++              _streamRetries < 2) {
 +            final list = playlists
 +                .where((list) => list.id == _playingPlaylistId)
 +                .firstOrNull;
@@ -1380,7 +1386,8 @@ index 0000000000000000000000000000000000000000..ca6744e46c68c6c112acba2c64379247
 +                  resumeAt: position.value,
 +                ),
 +              );
-+          } else if (_ownsMediaSession) {
++          } else if (_ownsMediaSession && _readyRequest == _request) {
++            _readyRequest = null;
 +            song.error = '重试后仍无法播放，可再试一次或换源：$error';
 +            unawaited(save());
 +            _notifyUnavailable(song);
@@ -1388,7 +1395,13 @@ index 0000000000000000000000000000000000000000..ca6744e46c68c6c112acba2c64379247
 +        }
 +      }),
 +      player.stream.completed.listen((value) {
-+        if (!value || loading.value || current.value?.error != null) return;
++        if (!value ||
++            loading.value ||
++            !_ownsMediaSession ||
++            _readyRequest != _request) {
++          return;
++        }
++        _readyRequest = null;
 +        if (shutdownTimerService.isWaiting) {
 +          shutdownTimerService.handleWaiting();
 +        } else {
@@ -1450,12 +1463,21 @@ index 0000000000000000000000000000000000000000..ca6744e46c68c6c112acba2c64379247
 +    int attempt = 0,
 +    Duration? resumeAt,
 +  }) async {
++    await _play(list, song, attempt: attempt, resumeAt: resumeAt);
++  }
++
++  // Null means a newer selection took ownership while this one was opening.
++  Future<bool?> _play(
++    ListeningPlaylist list,
++    ListeningSong song, {
++    int attempt = 0,
++    Duration? resumeAt,
++    bool reportFailure = true,
++  }) async {
 +    final request = ++_request;
-+    _streamRetries = attempt;
++    _readyRequest = null;
 +    _notifiedFailure = null;
 +    loading.value = true;
-+    await _player?.pause();
-+    if (request != _request) return;
 +    current.value = song;
 +    if (attempt == 0) {
 +      _trafficSession++;
@@ -1465,22 +1487,39 @@ index 0000000000000000000000000000000000000000..ca6744e46c68c6c112acba2c64379247
 +    _playingPlaylistId = list.id;
 +    position.value = duration.value = Duration.zero;
 +    try {
-+      await openSong(list, song, request);
-+      if (request != _request) return;
-+      if (resumeAt != null && resumeAt > Duration.zero)
-+        await _player?.seek(resumeAt);
-+      song.error = null;
-+    } catch (e) {
-+      if (request != _request) return;
-+      if (attempt < 2 && song.source.cid != 0) {
-+        await Future<void>.delayed(const Duration(milliseconds: 500));
-+        if (request != _request) return;
-+        await play(list, song, attempt: attempt + 1, resumeAt: resumeAt);
-+        return;
++      for (var retry = attempt; ; retry++) {
++        _streamRetries = retry;
++        try {
++          await _playerLock.synchronized(() async {
++            if (request == _request) await _player?.pause();
++          });
++          if (request != _request) return null;
++          await openSong(list, song, request);
++          if (request != _request) return null;
++          if (resumeAt != null && resumeAt > Duration.zero) {
++            await _playerLock.synchronized(() async {
++              if (request == _request) await _player?.seek(resumeAt);
++            });
++            if (request != _request) return null;
++          }
++          song.error = null;
++          _readyRequest = request;
++          return true;
++        } catch (e) {
++          if (request != _request) return null;
++          if (retry < 2 && song.source.cid != 0) {
++            await Future<void>.delayed(const Duration(milliseconds: 500));
++            if (request != _request) return null;
++            continue;
++          }
++          song.error = '重试后仍无法播放，可再试一次或搜索换源：$e';
++          if (reportFailure) {
++            SmartDialog.showToast(song.error!);
++            _notifyUnavailable(song);
++          }
++          return false;
++        }
 +      }
-+      song.error = '重试后仍无法播放，可再试一次或搜索换源：$e';
-+      SmartDialog.showToast(song.error!);
-+      _notifyUnavailable(song);
 +    } finally {
 +      if (request == _request) {
 +        loading.value = false;
@@ -1509,62 +1548,76 @@ index 0000000000000000000000000000000000000000..ca6744e46c68c6c112acba2c64379247
 +          ? audios.first.playUrls
 +          : response.durl?.firstOrNull?.playUrls;
 +      if (urls == null || urls.isEmpty) throw StateError('没有可播放的音源，请换源');
-+      final url = VideoUtils.getCdnUrl(urls, isAudio: true);
-+      final player = await _ensurePlayer();
-+      if (request != _request) return;
-+      await videoPlayerServiceHandler?.pause();
-+      await PlPlayerController.pauseIfExists();
-+      if (request != _request) return;
-+      _bindSession();
-+      await audioSessionHandler?.setActive(true);
-+      if (request != _request) return;
-+      videoPlayerServiceHandler?.setListeningMediaItem(
-+        MediaItem(
-+          id: 'listening:${song.id}',
-+          title: song.displayName,
-+          album: list.name,
-+          artUri: song.source.cover.isEmpty
-+              ? null
-+              : Uri.tryParse(song.source.cover),
-+        ),
-+      );
-+      player.setMediaHeader(
-+        userAgent: BrowserUa.pc,
-+        headers: {'Referer': 'https://www.bilibili.com/'},
-+      );
-+      _openError = null;
-+      await _watchNetwork();
-+      if (request != _request) return;
-+      _trafficTimer ??= Timer.periodic(
-+        const Duration(seconds: 1),
-+        (_) => mobileBytes.value = _receivedMobileBytes,
-+      );
-+      final trafficSession = _trafficSession;
-+      final previousProxy = _audioProxy;
-+      _audioProxy = null;
-+      await previousProxy?.close();
-+      if (request != _request) return;
-+      final proxy = await ListeningAudioProxy.create(
-+        Uri.parse(url),
-+        (bytes) {
-+          if (trafficSession == _trafficSession && isMobileNetwork.value) {
-+            _receivedMobileBytes += bytes;
-+          }
-+        },
-+        userAgent: BrowserUa.pc,
-+        cacheKey: song.source.key,
-+      );
-+      if (request != _request) {
-+        await proxy.close();
-+        return;
-+      }
-+      _audioProxy = proxy;
-+      unawaited(loadCurrentLyrics());
-+      _openError = null;
-+      await player.open(Media(proxy.url));
-+      if (_openError != null) throw StateError(_openError!);
-+      await player.setRate(speed.value);
-+      song.error = null;
++      final candidates = {VideoUtils.getCdnUrl(urls, isAudio: true), ...urls};
++      final url = candidates.elementAt(_streamRetries % candidates.length);
++      await _playerLock.synchronized(() async {
++        if (request != _request) return;
++        final player = await _ensurePlayer();
++        if (request != _request) return;
++        if (!_ownsMediaSession) {
++          await videoPlayerServiceHandler?.pause();
++          await PlPlayerController.pauseIfExists();
++        }
++        if (request != _request) return;
++        _bindSession();
++        await audioSessionHandler?.setActive(true);
++        if (request != _request) return;
++        videoPlayerServiceHandler?.setListeningMediaItem(
++          MediaItem(
++            id: 'listening:${song.id}',
++            title: song.displayName,
++            album: list.name,
++            artUri: song.source.cover.isEmpty
++                ? null
++                : Uri.tryParse(song.source.cover),
++          ),
++        );
++        player.setMediaHeader(
++          userAgent: BrowserUa.pc,
++          headers: {'Referer': 'https://www.bilibili.com/'},
++        );
++        await _watchNetwork();
++        if (request != _request) return;
++        _trafficTimer ??= Timer.periodic(
++          const Duration(seconds: 1),
++          (_) => mobileBytes.value = _receivedMobileBytes,
++        );
++        final trafficSession = _trafficSession;
++        final previousProxy = _audioProxy;
++        if (previousProxy != null) {
++          // mpv can still be reading the previous stream after EOF or pause.
++          await player.stop();
++          _audioProxy = null;
++          await previousProxy.close();
++        }
++        if (request != _request) return;
++        final proxy = await ListeningAudioProxy.create(
++          Uri.parse(url),
++          (bytes) {
++            if (trafficSession == _trafficSession && isMobileNetwork.value) {
++              _receivedMobileBytes += bytes;
++            }
++          },
++          userAgent: BrowserUa.pc,
++          cacheKey: song.source.key,
++        );
++        if (request != _request) {
++          await proxy.close();
++          return;
++        }
++        _audioProxy = proxy;
++        unawaited(loadCurrentLyrics());
++        _openError = null;
++        _openingRequest = request;
++        try {
++          await player.open(Media(proxy.url));
++          if (request != _request) return;
++          await player.setRate(speed.value);
++          if (_openError case final error?) throw StateError(error);
++        } finally {
++          _openingRequest = null;
++        }
++      });
 +    } else {
 +      throw StateError(result.toString());
 +    }
@@ -1608,6 +1661,7 @@ index 0000000000000000000000000000000000000000..ca6744e46c68c6c112acba2c64379247
 +    final list = playlists.where((e) => e.id == _playingPlaylistId).firstOrNull;
 +    if (list == null || list.songs.isEmpty) return;
 +    final index = list.songs.indexOf(current.value!);
++    if (index < 0) return;
 +    int target = index + (previous ? -1 : 1);
 +    if (completed && mode.value == ListeningMode.single) {
 +      target = index;
@@ -1618,7 +1672,26 @@ index 0000000000000000000000000000000000000000..ca6744e46c68c6c112acba2c64379247
 +    } else if (target < 0 || target >= list.songs.length) {
 +      target = (target + list.songs.length) % list.songs.length;
 +    }
-+    await play(list, list.songs[target]);
++    if (!completed || mode.value == ListeningMode.single) {
++      await play(list, list.songs[target]);
++      return;
++    }
++
++    final candidates = [
++      for (var offset = 0; offset < list.songs.length; offset++)
++        if ((target + offset) % list.songs.length != index ||
++            list.songs.length == 1)
++          list.songs[(target + offset) % list.songs.length],
++    ].take(3).toList();
++    for (final (offset, candidate) in candidates.indexed) {
++      final expectedRequest = _request + 1;
++      final result = await _play(
++        list,
++        candidate,
++        reportFailure: offset == candidates.length - 1,
++      );
++      if (result != false || expectedRequest != _request) return;
++    }
 +  }
 +
 +  // Add the new favorite before removing the old one. Keep a durable retry marker
@@ -7196,10 +7269,10 @@ index 0000000000000000000000000000000000000000..941cfac9ef9b33c21099e85b41db55a5
 +}
 diff --git a/test/pages/listening/playback_test.dart b/test/pages/listening/playback_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..8392a148a9de3a54896e0ce45adbc3574705f0c8
+index 0000000000000000000000000000000000000000..f9a81b6895f0e1ce1715a05d662577ae8e5b9593
 --- /dev/null
 +++ b/test/pages/listening/playback_test.dart
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,110 @@
 +import 'package:PiliPlus/pages/listening/controller.dart';
 +import 'package:PiliPlus/pages/listening/models.dart';
 +import 'package:flutter_test/flutter_test.dart';
@@ -7263,6 +7336,51 @@ index 0000000000000000000000000000000000000000..8392a148a9de3a54896e0ce45adbc357
 +    expect(controller.calls, ['old', 'next']);
 +    expect(controller.current.value, same(next));
 +    expect(controller.loading.value, isFalse);
++  });
++  test('automatic advance retries and skips an unavailable track', () async {
++    final controller = RetryController();
++    final first = song('first');
++    final unavailable = song('old');
++    final next = song('next');
++    final list = ListeningPlaylist(
++      id: 'list',
++      name: 'list',
++      songs: [first, unavailable, next],
++    );
++    controller.playlists.add(list);
++    var failures = 0;
++    controller.onUnavailable = (_) => failures++;
++
++    await controller.play(list, first);
++    await controller.next(completed: true);
++
++    expect(controller.calls, ['first', 'old', 'old', 'old', 'next']);
++    expect(controller.current.value, same(next));
++    expect(unavailable.error, isNotNull);
++    expect(failures, 0);
++  });
++
++  test('manual selection cancels automatic fallback', () async {
++    final controller = RetryController();
++    final first = song('first');
++    final unavailable = song('old');
++    final fallback = song('fallback');
++    final manual = song('manual');
++    final list = ListeningPlaylist(
++      id: 'list',
++      name: 'list',
++      songs: [first, unavailable, fallback, manual],
++    );
++    controller.playlists.add(list);
++
++    await controller.play(list, first);
++    final advance = controller.next(completed: true);
++    await Future<void>.delayed(const Duration(milliseconds: 20));
++    await controller.play(list, manual);
++    await advance;
++
++    expect(controller.calls, ['first', 'old', 'manual']);
++    expect(controller.current.value, same(manual));
 +  });
 +}
 diff --git a/test/pages/listening/song_name_test.dart b/test/pages/listening/song_name_test.dart
