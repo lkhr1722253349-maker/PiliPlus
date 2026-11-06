@@ -2908,10 +2908,10 @@ index 0000000000000000000000000000000000000000..835c90d22e759c0b1e48b8bdc541f4a6
 +}
 diff --git a/lib/pages/listening/netease.dart b/lib/pages/listening/netease.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..8282e9a0618ed3e19c06efc99d1678695ea52c17
+index 0000000000000000000000000000000000000000..a2983674446d6429c6ebc0c04df421662b64fa89
 --- /dev/null
 +++ b/lib/pages/listening/netease.dart
-@@ -0,0 +1,356 @@
+@@ -0,0 +1,360 @@
 +import 'dart:convert';
 +import 'dart:math';
 +
@@ -3127,7 +3127,11 @@ index 0000000000000000000000000000000000000000..8282e9a0618ed3e19c06efc99d167869
 +    final data = response.data is String
 +        ? jsonDecode(response.data as String)
 +        : response.data;
-+    final list = data is Map ? data['result']?['songs'] : null;
++    if (data is! Map || (data['code'] != null && data['code'] != 200)) {
++      throw StateError('网易云搜索暂不可用');
++    }
++    final result = data['result'];
++    final list = result is Map ? result['songs'] : null;
 +    if (list is! List) return [];
 +    return list.whereType<Map>().map(_parseSong).whereType<NeteaseSong>().toList();
 +  }
