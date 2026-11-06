@@ -1,14 +1,15 @@
 name: Build
 
 on:
-    # pull_request:
-    #     types:
-    #         - opened
-    #         - synchronize
-    #         - reopened
-    #         - ready_for_review
-    #     paths-ignore:
-    #         - "**.md"
+    push:
+        branches:
+            - build/upstream-overlay
+    pull_request:
+        paths:
+            - 'patches/**'
+            - 'scripts/**'
+            - 'upstream.lock'
+            - '.github/workflows/**'
     workflow_dispatch:
         inputs:
             build_android:
@@ -49,16 +50,22 @@ on:
 
 jobs:
     android:
-        if: ${{ (github.event_name == 'pull_request' && github.repository == 'bggRGjQaUbCoE/PiliPlus') || github.event.inputs.build_android == 'true' }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_android }}
         name: Release Android
         runs-on: ubuntu-latest
-        permissions: write-all
+        permissions:
+            contents: write
 
         steps:
             - name: 代码迁出
               uses: actions/checkout@v7
               with:
                   fetch-depth: 0
+                  persist-credentials: false
+
+            - name: Assemble upstream and customization
+              shell: pwsh
+              run: scripts/assemble.ps1
 
             - name: 构建Java环境
               uses: actions/setup-java@v5
@@ -82,42 +89,56 @@ jobs:
               shell: pwsh
               run: lib/scripts/patch.ps1 android
 
+            - name: Run customization tests
+              run: flutter test --no-pub test/pages/listening test/utils/accounts test/utils/extended_speeds_test.dart
+
             - name: Write key
-              if: github.event_name == 'workflow_dispatch'
+              if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+              env:
+                  SIGN_KEYSTORE_BASE64: ${{ secrets.SIGN_KEYSTORE_BASE64 }}
+                  KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+                  KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+                  KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
               run: |
-                  test -n '${{ secrets.SIGN_KEYSTORE_BASE64 }}'
-                  test -n '${{ secrets.KEYSTORE_PASSWORD }}'
-                  test -n '${{ secrets.KEY_ALIAS }}'
-                  test -n '${{ secrets.KEY_PASSWORD }}'
-                  echo "${{ secrets.SIGN_KEYSTORE_BASE64 }}" | base64 --decode > android/app/key.jks
+                  test -n "$SIGN_KEYSTORE_BASE64"
+                  test -n "$KEYSTORE_PASSWORD"
+                  test -n "$KEY_ALIAS"
+                  test -n "$KEY_PASSWORD"
+                  printf '%s' "$SIGN_KEYSTORE_BASE64" | base64 --decode > android/app/key.jks
                   echo storeFile='key.jks' >> android/key.properties
-                  echo storePassword='${{ secrets.KEYSTORE_PASSWORD }}' >> android/key.properties
-                  echo keyAlias='${{ secrets.KEY_ALIAS }}' >> android/key.properties
-                  echo keyPassword='${{ secrets.KEY_PASSWORD }}' >> android/key.properties
+                  echo storePassword="$KEYSTORE_PASSWORD" >> android/key.properties
+                  echo keyAlias="$KEY_ALIAS" >> android/key.properties
+                  echo keyPassword="$KEY_PASSWORD" >> android/key.properties
 
             - name: Set and Extract version
-              if: ${{ github.event_name == 'workflow_dispatch' }}
               shell: pwsh
               run: lib/scripts/build.ps1 android
 
             - name: Flutter Build Release Apk
-              if: ${{ github.event_name == 'workflow_dispatch' }}
+              if: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' }}
               run: flutter build apk --release --target-platform android-arm64 --split-per-abi --dart-define-from-file=pili_release.json --no-pub
 
             - name: Flutter Build Dev Apk
-              if: ${{ github.event_name == 'pull_request' }}
+              if: ${{ github.event_name != 'workflow_dispatch' || inputs.tag == '' }}
+              run: flutter build apk --debug --target-platform android-arm64 --split-per-abi --no-pub
+
+            - name: Verify APK native libraries
+              shell: pwsh
               run: |
-                  flutter build apk --release --split-per-abi --android-project-arg dev=1 --no-pub
+                  $apk = Get-ChildItem build/app/outputs/flutter-apk -Filter 'app-arm64-v8a-*.apk' | Select-Object -First 1
+                  if (!$apk) { throw 'Missing arm64 APK' }
+                  lib/scripts/verify_apk.ps1 $apk.FullName
 
             - name: Rename
               run: |
-                  for file in build/app/outputs/flutter-apk/app-*-release.apk; do
-                    abi=$(echo "$file" | sed -E 's|.*app-(.*)-release\.apk|\1|')
+                  for file in build/app/outputs/flutter-apk/app-arm64-v8a-*.apk; do
+                    abi=$(echo "$file" | sed -E 's|.*app-(.*)-(release|debug)\.apk|\1|')
                     mv "$file" "PiliPlus_android_${{ env.version }}_${abi}.apk"
                   done
               shell: bash
 
             - name: Create Android delta patches
+              id: delta
               if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
               env:
                   GH_TOKEN: ${{ github.token }}
@@ -125,8 +146,8 @@ jobs:
               shell: bash
               run: |
                   set -euo pipefail
-                  previous_tag=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=20" --jq ".[] | select(.tag_name != \"${CURRENT_TAG}\" and .draft == false) | .tag_name" | head -n 1)
-                  if [[ -z "$previous_tag" ]]; then
+                  previous_tag=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=20" --jq '[.[] | select(.draft == false and .prerelease == false and any(.assets[]; .name | test("^PiliPlus_android_.*_arm64-v8a[.]apk$")))] | .[0].tag_name // empty')
+                  if [[ -z "$previous_tag" || "$previous_tag" == "$CURRENT_TAG" ]]; then
                     echo 'No previous fork release; this release establishes the delta base.'
                     exit 0
                   fi
@@ -151,42 +172,27 @@ jobs:
                     if (( $(stat -c%s "$patch") * 10 >= $(stat -c%s "$new") * 8 )); then
                       rm "$patch"
                     fi
+                    if [[ -f "$patch" ]]; then echo "patch=$patch" >> "$GITHUB_OUTPUT"; fi
                   done
 
             - name: Release
               if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
               uses: softprops/action-gh-release@v3
               with:
-                  tag_name: ${{ github.event.inputs.tag }}
+                  tag_name: ${{ inputs.tag }}
+                  target_commitish: ${{ github.sha }}
+                  fail_on_unmatched_files: true
                   name: ${{ github.event.inputs.tag }}
                   body: |
                       PiliPlus 二次开发版本，非原项目官方发布。
                       原项目：https://github.com/bggRGjQaUbCoE/PiliPlus
                       请勿将此版本用于商业用途；项目仍按 GPLv3 授权。
                       听歌歌单支持从网易云歌曲 / 歌单链接导入，并按歌名、歌手和时长匹配 B 站音源。
-                      Android：仅提供 arm64-v8a 两个文件——完整包 PiliPlus_android_*.apk 与差分包 PiliPlus_android_from_*.patch。
+                      Android 提供 arm64-v8a 完整包，符合条件时附上差分包。
                       应用内更新优先使用差分包，校验失败自动回退完整包。
                   files: |
                       PiliPlus_android_*_arm64-v8a.apk
-                      PiliPlus_android_from_*_arm64-v8a.patch
-
-            - name: Prune older releases
-              if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
-              env:
-                  GH_TOKEN: ${{ github.token }}
-                  CURRENT_TAG: ${{ github.event.inputs.tag }}
-              shell: bash
-              run: |
-                  set -euo pipefail
-                  # Fail fast: never delete the base release if this release is missing.
-                  gh release view "$CURRENT_TAG" >/dev/null
-                  mapfile -t tags < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[] | select(.draft == false) | .tag_name')
-                  for t in "${tags[@]}"; do
-                    [[ "$t" == "$CURRENT_TAG" ]] && continue
-                    echo "Removing older release $t (the new delta patch replaces it)"
-                    gh release delete "$t" --yes --cleanup-tag
-                  done
-                  echo "Remaining release: $CURRENT_TAG"
+                      ${{ steps.delta.outputs.patch }}
 
             - name: 上传
               uses: actions/upload-artifact@v7
@@ -196,7 +202,7 @@ jobs:
                   path: PiliPlus_android_*_arm64-v8a.apk
 
     ios:
-        if: ${{ (github.event_name == 'pull_request' && github.repository == 'bggRGjQaUbCoE/PiliPlus') || github.event.inputs.build_ios == 'true' }}
+        if: ${{ github.event.inputs.build_ios == 'true' }}
         uses: ./.github/workflows/ios.yml
         permissions: write-all
         with:
@@ -210,7 +216,7 @@ jobs:
             tag: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
 
     win_x64:
-        if: ${{ (github.event_name == 'pull_request' && github.repository == 'bggRGjQaUbCoE/PiliPlus') || github.event.inputs.build_win_x64 == 'true' }}
+        if: ${{ github.event.inputs.build_win_x64 == 'true' }}
         uses: ./.github/workflows/win_x64.yml
         permissions: write-all
         with:
