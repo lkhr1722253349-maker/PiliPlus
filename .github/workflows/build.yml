@@ -161,6 +161,13 @@ jobs:
                     old=$(find previous -maxdepth 1 -name "PiliPlus_android_*_${abi}.apk" -print -quit)
                     new=$(find . -maxdepth 1 -name "PiliPlus_android_*_${abi}.apk" -print -quit)
                     [[ -n "$old" && -n "$new" ]] || continue
+                    apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+                    old_signers=$("$apksigner" verify --print-certs "$old" | awk -F ': ' '/certificate SHA-256 digest:/ { print $2 }' | sort)
+                    new_signers=$("$apksigner" verify --print-certs "$new" | awk -F ': ' '/certificate SHA-256 digest:/ { print $2 }' | sort)
+                    if [[ -z "$old_signers" || "$old_signers" != "$new_signers" ]]; then
+                      echo 'The new APK signer differs from the published APK.' >&2
+                      exit 1
+                    fi
                     if [[ "$(basename "$old")" =~ \+([0-9]+)_${abi}\.apk$ ]]; then
                       old_code="${BASH_REMATCH[1]}"
                     else

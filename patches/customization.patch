@@ -23,7 +23,7 @@ index 4bcfdbcced42a2dafd250d12e95549b27d1ac671..cef19f68124854cc018e5c267f07f38b
  
 diff --git a/CUSTOMIZATION.md b/CUSTOMIZATION.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..3b890d812d705940c849ed39c04127bb2dba9778
+index 0000000000000000000000000000000000000000..932ea548f5884f130413e50750197c325d5fc1f6
 --- /dev/null
 +++ b/CUSTOMIZATION.md
 @@ -0,0 +1,70 @@
@@ -79,7 +79,7 @@ index 0000000000000000000000000000000000000000..3b890d812d705940c849ed39c04127bb
 +
 +## 开发与验证
 +
-+使用 `.fvmrc` / `pubspec.yaml` 指定的 Flutter 3.47.7。项目依赖上游的 Flutter SDK 和 Material UI 补丁，需按照 `lib/scripts/patch.ps1` 中对应平台的补丁清单配置开发环境；脚本包含 CI 专用的全局 Git 配置及重置操作，本地不应直接照搬这些步骤。
++使用 `.fvmrc` / `pubspec.yaml` 指定的 Flutter 3.47.9。项目依赖上游的 Flutter SDK 和 Material UI 补丁，需按照 `lib/scripts/patch.ps1` 中对应平台的补丁清单配置开发环境；脚本包含 CI 专用的全局 Git 配置及重置操作，本地不应直接照搬这些步骤。
 +
 +Windows 下载 Git 依赖需要启用 Git 长路径支持；可只向构建进程传递 `core.longpaths=true`，不必修改全局 Git 配置。Windows 桌面插件链接还需要操作系统提供符号链接支持。
 +
@@ -5331,10 +5331,10 @@ index 0000000000000000000000000000000000000000..060dac1fcd6492bfed68ec455c6060d9
 +    $archive.Dispose()
 +}
 diff --git a/lib/services/audio_handler.dart b/lib/services/audio_handler.dart
-index 6df79f343db0b1b79ba2132697d02f88f3fdda92..ea153c3a62cf3d622bbc123ed45096a90afac778 100644
+index 6df79f343db0b1b79ba2132697d02f88f3fdda92..109973cdd2f50086504297685c34eb2fc03e9bb5 100644
 --- a/lib/services/audio_handler.dart
 +++ b/lib/services/audio_handler.dart
-@@ -93,9 +93,47 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
+@@ -93,9 +93,39 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
    Future<void>? Function(Duration position)? onSeek;
    void Function()? onSkipToNext;
    void Function()? onSkipToPrevious;
@@ -5367,14 +5367,6 @@ index 6df79f343db0b1b79ba2132697d02f88f3fdda92..ea153c3a62cf3d622bbc123ed45096a9
 +    listeningMode = mode;
 +    _lastConfig = null;
 +  }
-+
-+  @override
-+  Future<dynamic> customAction(
-+    String name, [
-+    Map<String, dynamic>? extras,
-+  ]) async {
-+    if (_listening && name == 'listeningMode') onListeningMode?.call();
-+  }
  
    @override
    Future<void> play() {
@@ -5382,7 +5374,7 @@ index 6df79f343db0b1b79ba2132697d02f88f3fdda92..ea153c3a62cf3d622bbc123ed45096a9
      return onPlay?.call() ??
          PlPlayerController.playIfExists() ??
          Future.syncValue(null);
-@@ -103,6 +141,7 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
+@@ -103,6 +133,7 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
  
    @override
    Future<void> pause() {
@@ -5390,7 +5382,7 @@ index 6df79f343db0b1b79ba2132697d02f88f3fdda92..ea153c3a62cf3d622bbc123ed45096a9
      return onPause?.call() ??
          PlPlayerController.pauseIfExists() ??
          Future.syncValue(null);
-@@ -128,18 +167,27 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
+@@ -128,18 +159,27 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
  
    @override
    Future<void> skipToNext() {
@@ -5418,7 +5410,18 @@ index 6df79f343db0b1b79ba2132697d02f88f3fdda92..ea153c3a62cf3d622bbc123ed45096a9
      return onSeek?.call(position) ??
          PlPlayerController.seekToIfExists(position, isSeek: false) ??
          Future.syncValue(null);
-@@ -162,6 +210,7 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
+@@ -147,6 +187,10 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
+ 
+   @override
+   Future<dynamic> customAction(String name, [Map<String, dynamic>? extras]) {
++    if (_listening && name == 'listeningMode') {
++      onListeningMode?.call();
++      return Future.syncValue(null);
++    }
+     try {
+       switch (name) {
+         case 'ACTION_DM':
+@@ -162,6 +206,7 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
    }
  
    void setMediaItem(MediaItem newMediaItem) {
@@ -5426,7 +5429,7 @@ index 6df79f343db0b1b79ba2132697d02f88f3fdda92..ea153c3a62cf3d622bbc123ed45096a9
      if (!enableBackgroundPlay) return;
      // if (kDebugMode) {
      //   debugPrint("此时调用栈为：");
-@@ -172,6 +221,25 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
+@@ -172,6 +217,25 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
      if (!mediaItem.isClosed) mediaItem.add(newMediaItem);
    }
  
@@ -5452,7 +5455,7 @@ index 6df79f343db0b1b79ba2132697d02f88f3fdda92..ea153c3a62cf3d622bbc123ed45096a9
    Duration? _lastPos;
    _StatusConfig? _lastConfig;
    void onUpdateState(
-@@ -181,7 +249,9 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
+@@ -181,7 +245,9 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
      required Duration position,
      required double speed,
      String? debugLabel,
@@ -5462,7 +5465,7 @@ index 6df79f343db0b1b79ba2132697d02f88f3fdda92..ea153c3a62cf3d622bbc123ed45096a9
      if (!enableBackgroundPlay || _item.isEmpty) {
        return;
      }
-@@ -234,11 +304,47 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
+@@ -234,11 +300,47 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
          updatePosition: position,
          speed: speed,
          controls: [
@@ -5512,7 +5515,7 @@ index 6df79f343db0b1b79ba2132697d02f88f3fdda92..ea153c3a62cf3d622bbc123ed45096a9
          systemActions: const {.seek},
        ),
      );
-@@ -352,6 +458,7 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
+@@ -352,6 +454,7 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
      if (_item.isNotEmpty) {
        _item.removeWhere((item) => item.id.endsWith(herotag));
      }
@@ -5520,7 +5523,7 @@ index 6df79f343db0b1b79ba2132697d02f88f3fdda92..ea153c3a62cf3d622bbc123ed45096a9
      if (_item.isNotEmpty) {
        setMediaItem(_item.last);
        playbackState.add(
-@@ -366,6 +473,7 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
+@@ -366,6 +469,7 @@ class VideoPlayerServiceHandler extends BaseAudioHandler with SeekHandler {
    }
  
    void clear() {
@@ -5887,17 +5890,34 @@ index bca7a29c548a76fd7bce0e3c6ed2321fa05b50a2..34d50c78151d539e607d4bad16970a9a
    flutter_inappwebview_android:
 diff --git a/test/pages/listening/audio_proxy_test.dart b/test/pages/listening/audio_proxy_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..5274ad0998f3e54e429d71a64d6adc2e5502b49e
+index 0000000000000000000000000000000000000000..75bb910e10d83f56eea74764016967536b593f46
 --- /dev/null
 +++ b/test/pages/listening/audio_proxy_test.dart
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,80 @@
 +import 'dart:io';
 +
 +import 'package:PiliPlus/pages/listening/audio_proxy.dart';
 +import 'package:flutter_test/flutter_test.dart';
++import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
++
++class _TestPathProvider extends PathProviderPlatform {
++  _TestPathProvider(this.path);
++
++  final String path;
++
++  @override
++  Future<String> getApplicationSupportPath() async => path;
++}
 +
 +void main() {
-+  test('audio proxy preserves ranges and counts downloaded bytes including rereads', () async {
++  test('audio proxy serves seeks from cache without counting cached bytes', () async {
++    final support = await Directory.systemTemp.createTemp();
++    final originalProvider = PathProviderPlatform.instance;
++    PathProviderPlatform.instance = _TestPathProvider(support.path);
++    addTearDown(() async {
++      PathProviderPlatform.instance = originalProvider;
++      await support.delete(recursive: true);
++    });
 +    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
 +    final payload = List.generate(8192, (i) => i % 256);
 +    final ranges = <String?>[];
@@ -5906,15 +5926,8 @@ index 0000000000000000000000000000000000000000..5274ad0998f3e54e429d71a64d6adc2e
 +      ranges.add(request.headers.value('range'));
 +      final response = request.response;
 +      response.headers.contentType = ContentType('audio', 'mp4');
-+      if (request.headers.value('range') == 'bytes=2048-4095') {
-+        response.statusCode = 206;
-+        response.headers.set('content-range', 'bytes 2048-4095/8192');
-+        response.contentLength = 2048;
-+        response.add(payload.sublist(2048, 4096));
-+      } else {
-+        response.contentLength = payload.length;
-+        if (request.method != 'HEAD') response.add(payload);
-+      }
++      response.contentLength = payload.length;
++      if (request.method != 'HEAD') response.add(payload);
 +      await response.close();
 +    });
 +    var bytes = 0;
@@ -5922,12 +5935,19 @@ index 0000000000000000000000000000000000000000..5274ad0998f3e54e429d71a64d6adc2e
 +      Uri.parse('http://127.0.0.1:${server.port}/test'),
 +      (count) => bytes += count,
 +      userAgent: 'Test',
++      cacheKey: 'audio-proxy-test',
 +    );
 +    final client = HttpClient();
 +    try {
 +      final first = await (await client.getUrl(Uri.parse(proxy.url))).close();
 +      expect((await first.expand((e) => e).toList()), payload);
 +      expect(bytes, 8192);
++      final cache = Directory('${support.path}${Platform.pathSeparator}listening_audio');
++      final deadline = DateTime.now().add(const Duration(seconds: 5));
++      while (!cache.listSync().any((entry) => entry.path.endsWith('.audio'))) {
++        if (DateTime.now().isAfter(deadline)) fail('Audio was not cached');
++        await Future<void>.delayed(const Duration(milliseconds: 10));
++      }
 +      final request = await client.getUrl(Uri.parse(proxy.url));
 +      request.headers.set('range', 'bytes=2048-4095');
 +      final second = await request.close();
@@ -5937,11 +5957,11 @@ index 0000000000000000000000000000000000000000..5274ad0998f3e54e429d71a64d6adc2e
 +        await second.expand((e) => e).toList(),
 +        payload.sublist(2048, 4096),
 +      );
-+      expect(bytes, 10240);
++      expect(bytes, 8192);
 +      final head = await (await client.headUrl(Uri.parse(proxy.url))).close();
 +      await head.drain<void>();
-+      expect(bytes, 10240);
-+      expect(ranges, [null, 'bytes=2048-4095', null]);
++      expect(bytes, 8192);
++      expect(ranges, [null]);
 +    } finally {
 +      client.close(force: true);
 +      await proxy.close();
@@ -6484,10 +6504,10 @@ index 0000000000000000000000000000000000000000..917048884b1625faec439305ee8e133b
 +}
 diff --git a/test/pages/listening/lyrics_view_test.dart b/test/pages/listening/lyrics_view_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..9d7a2d29ae84b7f7f1da82e3c07e24ff3b2afde1
+index 0000000000000000000000000000000000000000..ebb032b4249c756e0334415e98357819ddfe12c1
 --- /dev/null
 +++ b/test/pages/listening/lyrics_view_test.dart
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,126 @@
 +import 'dart:io';
 +
 +import 'package:PiliPlus/pages/listening/controller.dart';
@@ -6503,7 +6523,10 @@ index 0000000000000000000000000000000000000000..9d7a2d29ae84b7f7f1da82e3c07e24ff
 +class FakeSearch extends LyricsSearch {
 +  final queries = <String>[];
 +  @override
-+  Future<List<LyricCandidate>> search(String name) async {
++  Future<List<LyricCandidate>> search(
++    String name, {
++    Iterable<String> hints = const [],
++  }) async {
 +    queries.add(name);
 +    return [
 +      LyricCandidate({
