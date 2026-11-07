@@ -23,7 +23,7 @@ index 4bcfdbcced42a2dafd250d12e95549b27d1ac671..cef19f68124854cc018e5c267f07f38b
  
 diff --git a/CUSTOMIZATION.md b/CUSTOMIZATION.md
 new file mode 100644
-index 0000000000000000000000000000000000000000..253060d9d126458ac5b9deb34ce1f868d68b690a
+index 0000000000000000000000000000000000000000..8c274e889a04da5e0ca3877006e5714a1c9cf195
 --- /dev/null
 +++ b/CUSTOMIZATION.md
 @@ -0,0 +1,67 @@
@@ -44,7 +44,7 @@ index 0000000000000000000000000000000000000000..253060d9d126458ac5b9deb34ce1f868
 +- 听视频通知沿用原版媒体通知，提供上一首、播放 / 暂停、下一首和播放顺序切换，不显示普通视频的前后快进按钮。
 +- 听视频的媒体回调独立保存；普通视频的回调、状态更新与关闭不会覆盖正在播放的歌单。系统旧快进 / 后退指令在听歌时分别映射到下一首 / 上一首。
 +- 手机播放页避开底部导航栏，展开 / 收起入口保持可见；顶栏只使用一次状态栏安全区。
-+- 自动取名先用 B 站歌曲标签或标题线索查询网易云，再核对分 P 时长、同名歌手和 B 站反查结果。匹配到当前 BV 才采用网易云曲名，匹配不确定时保留原名称。手动改名和网易云导入的曲名优先，原视频和音源不变。
++- 自动取名优先提取标签或视频标题中的《歌名》，用网易云或 LRCLIB 核对曲名和分 P 时长，再反查 B 站当前 BV。证据唯一时保存书名号内的文字，匹配不确定时保留原名称。手动改名和网易云导入的曲名优先，原视频和音源不变。
 +- 底部“歌词设置”或歌曲菜单进入歌词页。用歌曲原名（不附中文译名）优先联网搜索网易云音乐，未取得歌词时回退 LRCLIB，结果显示来源、歌手、时长。仅唯一同名且通过语言、内容完整度、已知时长检查的结果自动采用；有歧义时通过搜索按钮选择版本，手动确认后持久化并保留。没有时间轴的歌词只显示全文，不伪造同步进度。
 +- 不请求视频字幕作为歌词，也不使用旧的字幕缓存或由字幕翻译得到的缓存；优先网络歌曲歌词，其次已保存的歌曲歌词，找不到时显示暂无歌词。同步歌词可点击跳转，支持按当前音源保存时间偏移。
 +- “查看原视频”直接在本应用打开保留的原视频及原分 P，原视频失效时不会擅自跳转到替代源。
@@ -53,7 +53,7 @@ index 0000000000000000000000000000000000000000..253060d9d126458ac5b9deb34ce1f868
 +- 自动匹配先合并歌手、时长和同步歌词完全相同的重复发行记录，再校验当前音频时长；网络搜索返回后读取最新时长，避免播放器尚未准备好导致同名翻唱无法排除。仍有不同版本时只在视频标题能明确识别唯一歌手的情况下自动选中，否则保留手动选择。
 +- 歌词首次搜索无法可靠匹配时，读取原视频 BGM 标签和歌曲标签，使用 Wikimedia 官方 MediaWiki / Wikidata API（带 User-Agent，限每个语言站点一次请求）找百科标题作为辅助查询词，再回到音乐歌词搜索；不抓取百科页面 HTML，歌词匹配仍校验原名和实际音频时长。
 +- 移动网络及系统标记为计费的 Wi-Fi 下，在展开 / 收起列表键左侧显示“耗费流量：xxx B / KB / MB / GB”；普通 Wi-Fi 下隐藏。音源通过仅监听本机回环地址的转发统计实际网络响应正文，并将完整音频缓存到应用本地支持目录；后续播放及拖动进度使用本地缓存，不重复下载。缓存上限约 512 MB，空间紧张时优先清理较旧文件；未完整下载的临时文件不复用。流量统计不含协议头、封面、歌词与其他页面请求。切歌重新累计，同一首的自动重试保留累计值；只累计计费网络期间收到的数据。
-+- 临时播放失败会重新取流、轮换可用 CDN 并最多自动重试两次。自然播完后，列表循环和随机播放最多连续尝试三首候选歌曲；手动切歌会取消此前的重试和自动跳过。仍失败时可选择再次重试或搜索换源。也可以在视频正常时点击“搜索换源”。搜索词可修改，结果可翻页，替换前可选择目标分 P。
++- 临时播放失败会重新取流、轮换可用 CDN 并最多自动重试两次。自然播完后，等待下一首实际开始播放，开流报错或超时会重试；列表循环和随机播放最多连续尝试三首候选歌曲；手动切歌会取消此前的重试和自动跳过。仍失败时可选择再次重试或搜索换源。也可以在视频正常时点击“搜索换源”。搜索词可修改，结果可翻页，替换前可选择目标分 P。
 +- 换源保留歌曲名、原视频标题 / BV / 分 P 及历次来源记录。“保留原视频”指保留元信息和链接，不是缓存已删除的视频文件。
 +- 导入收藏的条目会同步修改关联收藏夹：先收藏新视频，保存本地来源，再移除旧收藏。移除失败时保留重试入口。其他歌单歌曲仍依赖旧视频的分 P 时，保留旧收藏。
 +- 收藏同步绑定导入时的主账号，切换账号后必须切回原账号再同步。本地手动添加且没有关联收藏夹的条目只修改歌单。
@@ -884,10 +884,10 @@ index 0000000000000000000000000000000000000000..81a8302d89803e523a6d5cd4792a64d3
 +}
 diff --git a/lib/pages/listening/controller.dart b/lib/pages/listening/controller.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..445ecf77654efa41741e95bd38d159b61f6a71a6
+index 0000000000000000000000000000000000000000..0b30668302e9562cf8f9f569e5b13fba5cd10663
 --- /dev/null
 +++ b/lib/pages/listening/controller.dart
-@@ -0,0 +1,851 @@
+@@ -0,0 +1,915 @@
 +import 'dart:async';
 +import 'dart:io' show Platform;
 +import 'dart:math';
@@ -1056,7 +1056,7 @@ index 0000000000000000000000000000000000000000..445ecf77654efa41741e95bd38d159b6
 +      for (final list in playlists.toList()) {
 +        for (final song in list.songs.toList()) {
 +          final source = song.source;
-+          final checkedSource = 'netease:${source.key}';
++          final checkedSource = 'quoted-v2:${source.key}';
 +          if (song.nameEdited ||
 +              song.namedSource == checkedSource ||
 +              source.cid == 0) {
@@ -1087,37 +1087,70 @@ index 0000000000000000000000000000000000000000..445ecf77654efa41741e95bd38d159b6
 +  }
 +
 +  Future<String?> _confirmedSongName(ListeningSong song, SongSource source) async {
-+    String? tag;
++    var tags = <String>[];
 +    try {
-+      tag = await ListeningMetadata().name(source);
++      tags = await ListeningMetadata().nameHints(source);
 +    } catch (_) {
 +      // The video title can still provide a query when tags are unavailable.
 +    }
-+    final quoted = RegExp(r'《([^》]+)》').allMatches(source.title).toList();
++    final quoted = quotedSongNames(source.title).toList();
 +    final titleParts = source.title.split(RegExp(r'\s+[-–—]\s+|[|｜]'));
-+    final hint = (tag ??
-+        (quoted.length == 1
-+            ? quoted.single.group(1)!
-+            : titleParts.length == 2
-+            ? titleParts.last.replaceAll(RegExp(r'【[^】]*】'), '')
-+            : song.name)).trim();
-+    if (hint.isEmpty) return null;
-+    final candidates = await NeteaseClient.search(hint);
-+    if (candidates.isEmpty) return null;
++    final hints = {
++      for (final tag in tags) tag.trim(),
++      ...quoted.map((name) => '《$name》'),
++      if (tags.isEmpty && quoted.isEmpty)
++        titleParts.length == 2
++            ? titleParts.last.replaceAll(RegExp(r'【[^】]*】'), '').trim()
++            : song.name.trim(),
++    }..remove('');
++    if (hints.isEmpty) return null;
 +    final video = await detail(source.bvid);
 +    final part = video.pages?.where((part) => part.cid == source.cid).firstOrNull;
-+    final match = matchNeteaseSongName(
-+      hint: hint,
-+      videoTitle: '${video.title ?? ''} ${source.title}',
-+      partSeconds: part?.duration ?? 0,
-+      candidates: candidates,
-+    );
-+    if (match == null) return null;
-+    final results = await search('${match.name} ${match.artists}'.trim(), 1);
-+    return results.any((item) => item.bvid == source.bvid) ? match.name : null;
++    final seconds = part?.duration ?? 0;
++    if (seconds <= 0) return null;
++    final lyrics = LyricsSearch();
++    final confirmed = <String>{};
++    try {
++      for (final rawHint in hints.take(3)) {
++        final quotedHint = quotedSongNames(rawHint).firstOrNull;
++        final hint = quotedHint ?? rawHint;
++        final candidates = <NeteaseSong>[];
++        try {
++          candidates.addAll(await NeteaseClient.search(hint));
++        } catch (_) {
++          // Try LRCLIB independently.
++        }
++        NeteaseSong? match() => matchNeteaseSongName(
++          hint: hint,
++          videoTitle: '${video.title ?? ''} ${source.title}',
++          partSeconds: seconds,
++          candidates: candidates,
++        );
++        var track = match();
++        if (track == null && candidates.every((song) =>
++            normalizeNeteaseText(song.name) != normalizeNeteaseText(hint))) {
++          candidates.addAll((await lyrics.searchLrclib(hint)).map((song) => NeteaseSong(
++            id: 0, name: song.title, artists: song.artist, album: '',
++            durationMs: song.duration * 1000,
++          )));
++          track = match();
++        }
++        if (track == null) continue;
++        final query = '${track.name} ${track.artists}'.trim();
++        final results = await search(query, 1);
++        if (results.any((item) => item.bvid == source.bvid)) {
++          confirmed.add(quotedHint ?? quotedSongNames(track.name).firstOrNull ?? track.name);
++        }
++      }
++    } finally {
++      lyrics.close();
++    }
++    return confirmed.length == 1 ? confirmed.single : null;
 +  }
 +
 +  String? _openError;
++  int? _startupRequest;
++  Completer<String?>? _startup;
 +
 +  ListeningPlaylist get selected =>
 +      playlists.firstWhere((e) => e.id == selectedId.value);
@@ -1319,6 +1352,11 @@ index 0000000000000000000000000000000000000000..445ecf77654efa41741e95bd38d159b6
 +    _player = player;
 +    _subscriptions.addAll([
 +      player.stream.position.listen((value) {
++        if (_openingRequest == _request && value > Duration.zero) {
++          if (_startup case final startup? when !startup.isCompleted) {
++            startup.complete(null);
++          }
++        }
 +        position.value = value;
 +        _publish();
 +      }),
@@ -1333,7 +1371,12 @@ index 0000000000000000000000000000000000000000..445ecf77654efa41741e95bd38d159b6
 +        final song = current.value;
 +        if (song != null) {
 +          if (loading.value) {
-+            if (_openingRequest == _request) _openError = error;
++            if (_openingRequest == _request) {
++              _openError = error;
++              if (_startup case final startup? when !startup.isCompleted) {
++                startup.complete(error);
++              }
++            }
 +          } else if (_ownsMediaSession &&
 +              _readyRequest == _request &&
 +              _streamRetries < 2) {
@@ -1436,8 +1479,13 @@ index 0000000000000000000000000000000000000000..445ecf77654efa41741e95bd38d159b6
 +    int attempt = 0,
 +    Duration? resumeAt,
 +    bool reportFailure = true,
++    bool automatic = false,
 +  }) async {
 +    final request = ++_request;
++    if (_startup case final startup? when !startup.isCompleted) {
++      startup.complete(null);
++    }
++    _startupRequest = automatic ? request : null;
 +    _readyRequest = null;
 +    _notifiedFailure = null;
 +    loading.value = true;
@@ -1572,12 +1620,21 @@ index 0000000000000000000000000000000000000000..445ecf77654efa41741e95bd38d159b6
 +        unawaited(loadCurrentLyrics());
 +        _openError = null;
 +        _openingRequest = request;
++        final startup = _startup = _startupRequest == request
++            ? Completer<String?>()
++            : null;
 +        try {
 +          await player.open(Media(proxy.url));
 +          if (request != _request) return;
 +          await player.setRate(speed.value);
 +          if (_openError case final error?) throw StateError(error);
++          if (startup != null) {
++            final error = await startup.future.timeout(const Duration(seconds: 12));
++            if (request != _request) return;
++            if (error != null) throw StateError(error);
++          }
 +        } finally {
++          _startup = null;
 +          _openingRequest = null;
 +        }
 +      });
@@ -1606,6 +1663,9 @@ index 0000000000000000000000000000000000000000..445ecf77654efa41741e95bd38d159b6
 +  }
 +
 +  Future<void> pause() async {
++    if (_startup case final startup? when !startup.isCompleted) {
++      startup.complete(null);
++    }
 +    await _player?.pause();
 +  }
 +
@@ -1636,7 +1696,7 @@ index 0000000000000000000000000000000000000000..445ecf77654efa41741e95bd38d159b6
 +      target = (target + list.songs.length) % list.songs.length;
 +    }
 +    if (!completed || mode.value == ListeningMode.single) {
-+      await play(list, list.songs[target]);
++      await _play(list, list.songs[target], automatic: completed);
 +      return;
 +    }
 +
@@ -1652,6 +1712,7 @@ index 0000000000000000000000000000000000000000..445ecf77654efa41741e95bd38d159b6
 +        list,
 +        candidate,
 +        reportFailure: offset == candidates.length - 1,
++        automatic: true,
 +      );
 +      if (result != false || expectedRequest != _request) return;
 +    }
@@ -1728,6 +1789,9 @@ index 0000000000000000000000000000000000000000..445ecf77654efa41741e95bd38d159b6
 +  @override
 +  void onClose() {
 +    ++_request;
++    if (_startup case final startup? when !startup.isCompleted) {
++      startup.complete(null);
++    }
 +    ++_lyricsRequest;
 +    _trafficTimer?.cancel();
 +    _networkSubscription?.cancel();
@@ -1776,10 +1840,10 @@ index 0000000000000000000000000000000000000000..aaf11cf5f9d5ec1f00bed8b5c8536a49
 +}
 diff --git a/lib/pages/listening/lyrics.dart b/lib/pages/listening/lyrics.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..009831559a764007109d6238e26c2f9271461bf3
+index 0000000000000000000000000000000000000000..147730157eefecbc6f9e86969fd0b743e3a756ae
 --- /dev/null
 +++ b/lib/pages/listening/lyrics.dart
-@@ -0,0 +1,637 @@
+@@ -0,0 +1,649 @@
 +import 'dart:convert';
 +
 +import 'package:PiliPlus/http/loading_state.dart';
@@ -1840,6 +1904,11 @@ index 0000000000000000000000000000000000000000..009831559a764007109d6238e26c2f92
 +  return quoted.length == 1 ? quoted.single : null;
 +}
 +
++Iterable<String> quotedSongNames(String text) => RegExp(r'《([^》]+)》')
++    .allMatches(text)
++    .map((match) => match.group(1)!.trim())
++    .where((name) => name.isNotEmpty);
++
 +class ListeningMetadata {
 +  Future<List<String>> lyricSearchTags(SongSource source) async {
 +    final result = await UserHttp.videoTags(bvid: source.bvid, cid: source.cid);
@@ -1866,23 +1935,26 @@ index 0000000000000000000000000000000000000000..009831559a764007109d6238e26c2f92
 +    return [];
 +  }
 +
-+  Future<String?> name(SongSource source) async {
++  Future<List<String>> nameHints(SongSource source) async {
 +    final result = await UserHttp.videoTags(bvid: source.bvid, cid: source.cid);
 +    if (result case Success(:final response)) {
 +      final tags = response ?? <VideoTagItem>[];
++      final quoted = tags.expand((tag) => quotedSongNames(tag.tagName ?? '')).toSet();
++      if (quoted.isNotEmpty) return quoted.take(3).map((name) => '《$name》').toList();
 +      final music = tags.where((e) => e.tagType == 'bgm').toList();
 +      if (music.length == 1 && music.single.musicId != null) {
 +        try {
 +          final detail = await MusicHttp.bgmDetail(music.single.musicId!);
 +          if (detail case Success(:final response)) {
 +            if (response.musicTitle?.trim().isNotEmpty == true)
-+              return response.musicTitle!.trim();
++              return [response.musicTitle!.trim()];
 +          }
 +        } catch (_) {
 +          /* Fall back to the song tag. */
 +        }
 +      }
-+      return songTagName(tags, source.title);
++      final name = songTagName(tags, source.title);
++      return [?name];
 +    }
 +    throw StateError('暂时无法读取歌曲标签');
 +  }
@@ -2034,6 +2106,10 @@ index 0000000000000000000000000000000000000000..009831559a764007109d6238e26c2f92
 +      );
 +    }
 +    if (candidates.isNotEmpty) return candidates;
++    return searchLrclib(name);
++  }
++
++  Future<List<LyricCandidate>> searchLrclib(String name) async {
 +    final result = await _client.get(
 +      '/api/search',
 +      queryParameters: {'q': name},
@@ -6174,10 +6250,10 @@ index 0000000000000000000000000000000000000000..825b09950aa1852e92a0aa9777980b7d
 +}
 diff --git a/test/pages/listening/lyrics_test.dart b/test/pages/listening/lyrics_test.dart
 new file mode 100644
-index 0000000000000000000000000000000000000000..f32dd5e65483e656331e8ca5c404aca1abc24159
+index 0000000000000000000000000000000000000000..5d056143a2cfdf93054c493754b257f00e4512f9
 --- /dev/null
 +++ b/test/pages/listening/lyrics_test.dart
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,79 @@
 +import 'dart:io';
 +
 +import 'package:PiliPlus/models_new/video/video_tag/data.dart';
@@ -6188,6 +6264,10 @@ index 0000000000000000000000000000000000000000..f32dd5e65483e656331e8ca5c404aca1
 +import 'package:hive_ce/hive.dart';
 +
 +void main() {
++  test('extracts clean song title hints from brackets in tags', () {
++    expect(quotedSongNames('发现《 测试曲 》和《另一首》'), ['测试曲', '另一首']);
++    expect(quotedSongNames('《  》 音乐 《未闭合'), isEmpty);
++  });
 +  test('song name uses BGM tags and ignores ambiguous category tags', () {
 +    expect(
 +      songTagName([VideoTagItem(tagName: '发现测试曲', tagType: 'bgm')], '视频'),
