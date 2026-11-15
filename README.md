@@ -1,3 +1,7 @@
+> 定制版更新入口已迁移到 [Piliplus](https://github.com/lkhr1722253349-maker/PiliPlus-Standalone/releases/latest)。
+> 新版使用包名 com.example.piliplus.standalone，可与本旧版并存。旧版仍可使用，歌单和登录数据保留在旧应用里。
+> 旧版检查更新提供迁移安装包。首次安装后，请打开桌面名称为 Piliplus 的应用，后续从新版检查更新。
+
 # PiliPlus 定制挂载
 
 本仓库维护听视频歌单、歌词、匿名浏览、扩展倍速及定制更新等改动。应用源码来自 [上游 PiliPlus](https://github.com/bggRGjQaUbCoE/PiliPlus)，由 Actions 按 `upstream.lock` 取出指定提交并叠加 `patches/customization.patch`。定制版从[本仓库的 Releases](https://github.com/lkhr1722253349-maker/PiliPlus/releases)检查和下载更新。
